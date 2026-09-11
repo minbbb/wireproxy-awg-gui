@@ -35,6 +35,8 @@ The result of a connection is a local SOCKS5/HTTP proxy whose address and port a
 - Config validation via the **Validate** button
 - Start/stop, connection status and logs, live `/metrics` stats
 - Configs persisted to files (not kept in memory)
+- System tray with show/hide, start/stop and settings checkboxes
+- Autostart on Windows login and auto-connect of the default profile on launch
 
 ## Installing dependencies
 
@@ -112,6 +114,8 @@ On first run a legacy `userData/wireproxy.conf` is migrated into a profile. The 
 - `index.js` — Electron main process: wireproxy spawn, state machine, health polling, IPC
 - `preload.js` — contextBridge (`window.wireproxyApi`), IPC channel allowlist
 - `profiles.js` — profile storage (no Electron, pure Node)
+- `settings.js` — app settings (`autostart`, `autoconnect`, `defaultProfileId`)
+- `tray.js` — system tray (icon, dynamic menu), wired from the main process
 - `renderer/` — UI in plain HTML/CSS/JS
 - `scripts/fetch-wireproxy.js` — wireproxy download/extract for builds
 - `electron-builder.yml` — packaging config (portable win)

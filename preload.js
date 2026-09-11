@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('wireproxyApi', {
     stop: () => ipcRenderer.invoke('vpn:stop'),
     state: () => ipcRenderer.invoke('vpn:state'),
   },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    setAutostart: (enabled) => ipcRenderer.invoke('settings:setAutostart', enabled),
+    setAutoconnect: (enabled) => ipcRenderer.invoke('settings:setAutoconnect', enabled),
+    setDefaultProfile: (id) => ipcRenderer.invoke('settings:setDefaultProfile', id),
+  },
   onEvent: (channel, callback) => {
     const allowed = ['vpn:status', 'vpn:log', 'vpn:readyz', 'vpn:metrics'];
     if (!allowed.includes(channel)) return () => {};

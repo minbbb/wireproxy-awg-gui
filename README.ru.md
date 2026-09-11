@@ -35,6 +35,8 @@ Electron GUI (renderer + main process)
 - Валидация конфига кнопкой **Validate**
 - Запуск/остановка, статус и логи соединения, живая статистика `/metrics`
 - Сохранение конфигов в файлы (не в памяти)
+- Системный трей: скрытие/показ окна, start/stop, чекбоксы настроек
+- Автозапуск при входе в Windows и автосоединение профиля по умолчанию при запуске
 
 ## Установка зависимостей
 
@@ -112,6 +114,8 @@ INI-формат. Полная документация — в [README прое�
 - `index.js` — Electron main process: спавн wireproxy, state machine, опрос health endpoint, IPC
 - `preload.js` — contextBridge (`window.wireproxyApi`), белый список IPC-каналов
 - `profiles.js` — хранение профилей (без Electron, чистый Node)
+- `settings.js` — настройки приложения (`autostart`, `autoconnect`, `defaultProfileId`)
+- `tray.js` — системный трей (иконка, динамическое меню), подключается из main-процесса
 - `renderer/` — интерфейс на чистом HTML/CSS/JS
 - `scripts/fetch-wireproxy.js` — скачивание/распаковка wireproxy для сборки
 - `electron-builder.yml` — конфиг упаковки (portable win)

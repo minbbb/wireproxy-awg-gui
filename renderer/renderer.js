@@ -11,6 +11,9 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 const proxyAddr = document.getElementById('proxyAddr');
 const profileList = document.getElementById('profileList');
+const chkAutostart = document.getElementById('chkAutostart');
+const chkAutoconnect = document.getElementById('chkAutoconnect');
+const selectDefaultProfile = document.getElementById('selectDefaultProfile');
 
 const api = window.wireproxyApi;
 
@@ -19,6 +22,7 @@ let selectedId = null;
 let state = 'stopped';
 let activeProfileId = null;
 let dirty = false;
+let defaultProfileId = null;
 
 const STATE_LABEL = {
   stopped: 'Stopped',
@@ -131,8 +135,13 @@ function startRename(id) {
     if (commit && value && value !== input.defaultValue) {
       const res = await api.profiles.rename(id, value);
       if (!res.ok) appendLog('[gui] Rename failed: ' + res.error);
+      else {
+        const p = profiles.find((x) => x.id === id);
+        if (p) p.name = value;
+      }
     }
     renderList();
+    refreshDefaultSelect();
   };
 
   input.addEventListener('keydown', (e) => {
@@ -170,6 +179,7 @@ async function deleteProfile(id) {
     if (selectedId) await loadProfile(selectedId);
   }
   renderList();
+  refreshDefaultSelect();
 }
 
 async function saveProfile() {
@@ -222,6 +232,34 @@ function setStatus(nextState) {
   renderList();
 }
 
+function renderDefaultSelect() {
+  const current = defaultProfileId;
+  selectDefaultProfile.innerHTML = '';
+  const none = document.createElement('option');
+  none.value = '';
+  none.textContent = 'Default: none';
+  selectDefaultProfile.appendChild(none);
+  for (const p of profiles) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    selectDefaultProfile.appendChild(opt);
+  }
+  selectDefaultProfile.value = current || '';
+  const hasDefault = !!selectDefaultProfile.value;
+  chkAutoconnect.disabled = !hasDefault;
+  if (!hasDefault) chkAutoconnect.checked = false;
+}
+
+function refreshDefaultSelect() {
+  if (defaultProfileId && !profiles.some((p) => p.id === defaultProfileId)) {
+    defaultProfileId = null;
+    chkAutoconnect.checked = false;
+    api.settings.setDefaultProfile(null);
+  }
+  renderDefaultSelect();
+}
+
 btnNewProfile.addEventListener('click', async () => {
   if (dirty) {
     if (!window.confirm('Discard unsaved changes and create a new profile?')) return;
@@ -237,6 +275,7 @@ btnNewProfile.addEventListener('click', async () => {
   updateDirtyUI();
   await loadProfile(res.profile.id);
   renderList();
+  refreshDefaultSelect();
   appendLog('[gui] Created ' + res.profile.name);
 });
 
@@ -246,6 +285,41 @@ btnStart.addEventListener('click', startStop);
 
 btnClearLog.addEventListener('click', () => {
   logPane.textContent = '';
+});
+
+chkAutostart.addEventListener('change', async () => {
+  const res = await api.settings.setAutostart(chkAutostart.checked);
+  if (!res.ok) {
+    chkAutostart.checked = !chkAutostart.checked;
+    appendLog('[gui] Autostart failed: ' + res.error);
+  }
+});
+
+chkAutoconnect.addEventListener('change', async () => {
+  if (chkAutoconnect.checked && !defaultProfileId) {
+    chkAutoconnect.checked = false;
+    appendLog('[gui] Select a default profile first');
+    return;
+  }
+  const res = await api.settings.setAutoconnect(chkAutoconnect.checked);
+  if (!res.ok) {
+    chkAutoconnect.checked = !chkAutoconnect.checked;
+    appendLog('[gui] ' + res.error);
+  }
+});
+
+selectDefaultProfile.addEventListener('change', async () => {
+  const id = selectDefaultProfile.value || null;
+  if (id === defaultProfileId) return;
+  const res = await api.settings.setDefaultProfile(id);
+  if (res.ok) {
+    defaultProfileId = id;
+    if (!id) chkAutoconnect.checked = false;
+    chkAutoconnect.disabled = !id;
+  } else {
+    appendLog('[gui] ' + res.error);
+    renderDefaultSelect();
+  }
 });
 
 editor.addEventListener('input', () => {
@@ -296,13 +370,23 @@ api.onEvent('vpn:metrics', ({ text }) => {
 
 (async () => {
   const listRes = await api.profiles.list();
-  if (listRes.ok) profiles = listRes.profiles;
+  if (listRes.ok) {
+    profiles = listRes.profiles;
+    const setRes = await api.settings.get();
+    if (setRes.ok) {
+      defaultProfileId = setRes.defaultProfileId || null;
+      chkAutostart.checked = !!setRes.autostart;
+      chkAutoconnect.checked = !!setRes.autoconnect;
+    }
+    refreshDefaultSelect();
+  }
   if (!profiles.length) {
     const created = await api.profiles.create();
     if (created.ok) profiles = [{ id: created.profile.id, name: created.profile.name }];
   }
   selectedId = profiles.length ? profiles[0].id : null;
   if (selectedId) await loadProfile(selectedId);
+  refreshDefaultSelect();
 
   const st = await api.vpn.state();
   activeProfileId = st.activeProfileId;

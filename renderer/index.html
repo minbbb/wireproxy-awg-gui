@@ -47,6 +47,15 @@
   <footer>
     <span id="statusDot" class="dot stopped"></span>
     <span id="statusText">Stopped</span>
+    <div class="footer-settings">
+      <label class="settings-toggle" title="Start wireproxy-awg GUI on Windows login">
+        <input type="checkbox" id="chkAutostart" /> Autostart
+      </label>
+      <label class="settings-toggle" title="Automatically connect the default profile on app launch">
+        <input type="checkbox" id="chkAutoconnect" /> Auto-connect
+      </label>
+      <select id="selectDefaultProfile" title="Profile used for auto-connect"></select>
+    </div>
     <button id="btnClearLog" class="clear-btn">Clear log</button>
   </footer>
 

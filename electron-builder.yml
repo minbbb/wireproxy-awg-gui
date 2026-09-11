@@ -8,6 +8,8 @@ files:
   - index.js
   - preload.js
   - profiles.js
+  - settings.js
+  - tray.js
   - renderer/**
   - package.json
 
