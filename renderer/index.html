@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'" />
+  <title>wireproxy-awg GUI</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div class="title">wireproxy-awg GUI</div>
+    <div class="header-actions">
+      <span id="proxyAddr" class="proxy-addr" title="Proxy address parsed from the config"></span>
+      <label class="silent-toggle" title="Suppress wireproxy log output (-s flag)">
+        <input type="checkbox" id="silent" /> Silent
+      </label>
+      <button id="btnValidate">Validate</button>
+      <button id="btnSave">Save (Ctrl+S)</button>
+      <button id="btnStart" class="primary">Start</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span>Profiles</span>
+        <button id="btnNewProfile" class="new-btn" title="Add new profile">+ New</button>
+      </div>
+      <ul id="profileList" class="profile-list"></ul>
+    </aside>
+    <main>
+      <textarea id="editor" spellcheck="false" placeholder="Select or create a profile"></textarea>
+    </main>
+  </div>
+
+  <section class="panels">
+    <div class="panel">
+      <div class="panel-title">Logs</div>
+      <pre id="logPane" class="log-pane"></pre>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Metrics (/metrics)</div>
+      <pre id="metricsPane" class="log-pane"></pre>
+    </div>
+  </section>
+
+  <footer>
+    <span id="statusDot" class="dot stopped"></span>
+    <span id="statusText">Stopped</span>
+    <button id="btnClearLog" class="clear-btn">Clear log</button>
+  </footer>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
