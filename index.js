@@ -6,7 +6,9 @@ const fs = require('fs');
 const path = require('path');
 const profiles = require('./profiles');
 
-const WIREPROXY_PATH = path.join(__dirname, 'bin/wireproxy.exe');
+const WIREPROXY_PATH = app.isPackaged
+  ? path.join(process.resourcesPath, 'bin', 'wireproxy.exe')
+  : path.join(__dirname, 'bin', 'wireproxy.exe');
 
 let mainWindow = null;
 let child = null;

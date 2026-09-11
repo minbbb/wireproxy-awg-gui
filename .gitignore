@@ -1,2 +1,4 @@
 node_modules
 wireproxy-awg
+dist
+bin

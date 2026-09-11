@@ -1,0 +1,125 @@
+# wireproxy-awg-gui
+
+> [English version](README.md)
+
+GUI для [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) — userspace-клиента AmneziaWG (WireGuard с обфускацией), который предоставляет доступ в туннель в виде SOCKS5/HTTP прокси.
+
+## Что это
+
+Это **только обёртка**: само приложение подключений не устанавливает и данные не шифрует. Вся работа выполняется бинарником `wireproxy.exe` из релизов проекта [artem-russkikh/wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg). GUI предоставляет редактирование конфигов, валидацию, запуск/остановку и мониторинг состояния.
+
+## Как это работает
+
+```
+Electron GUI (renderer + main process)
+        │ 1) валидация: wireproxy -n -c <conf>
+        │ 2) спавн:     wireproxy -c <conf> -i 127.0.0.1:<freeport>
+        │ 3) мониторинг: опрос health endpoint каждые 1 с
+        ▼
+   wireproxy.exe ──── AmneziaWG-туннель ──── SOCKS5/HTTP прокси (по конфигу)
+```
+
+1. Перед каждым стартом конфиг проверяется в режиме валидации (`-n`, печатает `Config OK`). Неудача → состояние `error`, запуск не происходит.
+2. Выбирается свободный порт, и `wireproxy.exe` запускается с флагом `-i 127.0.0.1:<port>`, включающим health endpoint.
+3. Раз в секунду GUI опрашивает:
+   - `GET /readyz` — 200 → `connected`, 503 → `degraded`, недоступен → `connecting`;
+   - `GET /metrics` — статистика wireguard (`wg show`), выводится в панель Metrics.
+4. Остановка — `kill()` дочернего процесса (`-d` (daemon) не используется, PID отслеживается напрямую).
+
+Результат подключения — локальный SOCKS5/HTTP прокси, адрес и порт которого заданы в конфиге (`[Socks5]` / `[http]`, `BindAddress`).
+
+## Возможности
+
+- Профили подключений (создание, переименование, удаление, сохранение)
+- Редактор конфига с разбором адреса прокси и быстрым сохранением (Ctrl+S)
+- Валидация конфига кнопкой **Validate**
+- Запуск/остановка, статус и логи соединения, живая статистика `/metrics`
+- Сохранение конфигов в файлы (не в памяти)
+
+## Установка зависимостей
+
+```sh
+npm install
+```
+
+Для работы нужен бинарник `bin/wireproxy.exe` (в git не коммитится). Скачивается автоматически:
+
+```sh
+npm run fetch:wireproxy
+```
+
+## Запуск без сборки (разработка)
+
+```sh
+npm start
+```
+
+Запускает приложение через Electron из исходников. Требует Node.js и присутствующий `bin/wireproxy.exe` (см. выше).
+
+## Сборка (portable exe)
+
+```sh
+npm run dist
+```
+
+Собирает самодостаточный `dist/wireproxy-awg GUI 1.0.0.exe`:
+
+1. `npm run fetch:wireproxy` — качает пиновый релиз `wireproxy.exe` (Windows amd64, `wireproxy_windows_amd64.tar.gz`), проверяет SHA-256, распаковывает в `bin/`.
+2. `electron-builder --win` — упаковывает приложение; `wireproxy.exe` кладётся в `resources/bin/`, в рантайме путь резолвится через `process.resourcesPath`.
+
+## Версия wireproxy
+
+Версия релиза указывется **явно, не через `latest`**, в `package.json` → `config.wireproxy`:
+
+```json
+"config": {
+  "wireproxy": {
+    "repo": "artem-russkikh/wireproxy-awg",
+    "version": "v1.0.18",
+    "asset": "wireproxy_windows_amd64.tar.gz",
+    "sha256": "0b7c5e72930196b2b3e0c1d79068fad706148e4b5bbe44c8ee6374caf2c3b8b7"
+  }
+}
+```
+
+При обновлении версии меняйте `version` и `sha256` (брать из `checksums.txt` релиза).
+
+## Конфиг профиля
+
+INI-формат. Полная документация — в [README проекта wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg). Ключевые секции:
+
+| Секция | Назначение |
+| --- | --- |
+| `[Interface]` | параметры интерфейса, включая обфускацию AmneziaWG (Jc/Jmin/Jmax, S1-S4, H1-H4, I1-I5) |
+| `[Peer]` | ключ пира, endpoint, AllowedIPs, PersistentKeepalive |
+| `[Socks5]` / `[http]` | SOCKS5 / HTTP(S) прокси (`BindAddress`, опц. auth / CertFile / KeyFile) |
+| `[TCPClientTunnel]` / `[TCPServerTunnel]` / `[STDIOTunnel]` / `[UDPProxyTunnel]` | туннели |
+| `[Resolve]` | стратегия DNS: `ipv4` / `ipv6` / `auto` (по умолчанию `auto`) |
+
+Нюансы: верхнеуровневый `WGConfig = <path>` импортирует готовый AmneziaWG/WireGuard конфиг; параметры AmneziaWG пишутся прямо в `[Interface]`; значения, начинающиеся с `$`, резолвятся из переменных окружения (`$$` — литеральный `$`).
+
+## Где хранятся профили
+
+Профили лежат в `userData/profiles/` (Windows: `%APPDATA%\wireproxy-awg-gui\profiles\`):
+
+- `index.json` — метаданные профилей (пишутся атомарно через tmp+rename);
+- `<uuid>.conf` — сам текст конфига, по файлу на профиль.
+
+При первом запуске legacy-конфиг `userData/wireproxy.conf` мигрируется в профиль. Удалить последний профиль нельзя.
+
+## Структура репозитория
+
+- `index.js` — Electron main process: спавн wireproxy, state machine, опрос health endpoint, IPC
+- `preload.js` — contextBridge (`window.wireproxyApi`), белый список IPC-каналов
+- `profiles.js` — хранение профилей (без Electron, чистый Node)
+- `renderer/` — интерфейс на чистом HTML/CSS/JS
+- `scripts/fetch-wireproxy.js` — скачивание/распаковка wireproxy для сборки
+- `electron-builder.yml` — конфиг упаковки (portable win)
+- `bin/wireproxy.exe` — бинарник (не коммитится, генерируется `fetch:wireproxy`)
+- `wireproxy-awg/` — локальная копия исходников upstream (gitignored, справочно)
+
+## Требования
+
+- Windows (сборка и релиз бинарника wireproxy — Windows amd64)
+- Node.js 18+ и npm для запуска/сборки исходников
+- Интернет во время `npm run fetch:wireproxy` / `npm run dist`

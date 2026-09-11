@@ -1,16 +1,27 @@
 {
     "name": "wireproxy-awg-gui",
     "version": "1.0.0",
-    "description": "",
+    "description": "GUI for AmneziaWG compatible wireguard client that exposes itself as a socks5 proxy",
     "license": "MIT",
     "author": "minbbb",
     "type": "commonjs",
     "main": "index.js",
+    "config": {
+        "wireproxy": {
+            "repo": "artem-russkikh/wireproxy-awg",
+            "version": "v1.0.18",
+            "asset": "wireproxy_windows_amd64.tar.gz",
+            "sha256": "0b7c5e72930196b2b3e0c1d79068fad706148e4b5bbe44c8ee6374caf2c3b8b7"
+        }
+    },
     "scripts": {
         "start": "electron .",
+        "fetch:wireproxy": "node scripts/fetch-wireproxy.js",
+        "dist": "npm run fetch:wireproxy && electron-builder --win",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "devDependencies": {
-        "electron": "^37.0.0"
+        "electron": "^37.0.0",
+        "electron-builder": "^26.15.3"
     }
 }

@@ -1,0 +1,19 @@
+appId: com.minbbb.wireproxy-awg-gui
+productName: wireproxy-awg GUI
+
+directories:
+  output: dist
+
+files:
+  - index.js
+  - preload.js
+  - profiles.js
+  - renderer/**
+  - package.json
+
+extraResources:
+  - from: bin/wireproxy.exe
+    to: bin/wireproxy.exe
+
+win:
+  target: portable
