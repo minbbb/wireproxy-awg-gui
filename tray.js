@@ -14,9 +14,17 @@ class TrayController {
     this.onSetAutoconnect = options.onSetAutoconnect;
     this.onQuit = options.onQuit;
 
-    const image = nativeImage.createFromDataURL(
-      'data:image/png;base64,' + TRAY_ICON_BASE64
-    );
+    let image = options.iconPath
+      ? nativeImage.createFromPath(options.iconPath)
+      : nativeImage.createEmpty();
+    if (image.isEmpty()) {
+      image = nativeImage.createFromDataURL(
+        'data:image/png;base64,' + TRAY_ICON_BASE64
+      );
+    }
+    if (process.platform === 'win32') {
+      image = image.resize({ width: 32, height: 32 });
+    }
     this.tray = new Tray(image);
     this.tray.on('click', () => this.onToggleWindow());
     this.sync();

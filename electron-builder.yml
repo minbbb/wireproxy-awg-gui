@@ -11,6 +11,7 @@ files:
   - settings.js
   - tray.js
   - renderer/**
+  - icon.png
   - package.json
 
 extraResources:
@@ -18,4 +19,5 @@ extraResources:
     to: bin/wireproxy.exe
 
 win:
+  icon: icon.png
   target: portable

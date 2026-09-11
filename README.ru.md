@@ -119,6 +119,7 @@ INI-формат. Полная документация — в [README прое�
 - `renderer/` — интерфейс на чистом HTML/CSS/JS
 - `scripts/fetch-wireproxy.js` — скачивание/распаковка wireproxy для сборки
 - `electron-builder.yml` — конфиг упаковки (portable win)
+- `icon.png` — иконка приложения/окна/трея
 - `bin/wireproxy.exe` — бинарник (не коммитится, генерируется `fetch:wireproxy`)
 - `wireproxy-awg/` — локальная копия исходников upstream (gitignored, справочно)
 

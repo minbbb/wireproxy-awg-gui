@@ -294,6 +294,7 @@ if (!gotSingleInstanceLock) {
     settings.init(app.getPath('userData'));
 
     trayCtrl = new TrayController({
+      iconPath: path.join(__dirname, 'icon.png'),
       getState: trayState,
       onToggleWindow: () => {
         if (!mainWindow) return;
@@ -337,6 +338,7 @@ if (!gotSingleInstanceLock) {
       width: 1100,
       height: 760,
       title: 'wireproxy-awg GUI',
+      icon: path.join(__dirname, 'icon.png'),
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
