@@ -1,6 +1,7 @@
 const editor = document.getElementById('editor');
 const chainEditor = document.getElementById('chainEditor');
 const chainName = document.getElementById('chainName');
+const chainBindAddress = document.getElementById('chainBindAddress');
 const chainAddSelect = document.getElementById('chainAddSelect');
 const btnChainAdd = document.getElementById('btnChainAdd');
 const chainProfileList = document.getElementById('chainProfileList');
@@ -274,6 +275,7 @@ function enterChainMode(id) {
   const chain = chains.find((x) => x.id === id);
   chainProfileIds = chain ? [...chain.profileIds] : [];
   chainName.value = chain ? chain.name : '';
+  chainBindAddress.value = chain ? (chain.bindAddress || '') : '';
   chainDirty = false;
   editor.classList.add('hidden');
   chainEditor.classList.remove('hidden');
@@ -450,7 +452,7 @@ async function saveChain() {
     appendLog('[gui] A chain needs at least one profile');
     return false;
   }
-  const res = await api.chains.save(selectedChainId, name, chainProfileIds);
+  const res = await api.chains.save(selectedChainId, name, chainProfileIds, chainBindAddress.value.trim());
   if (!res.ok) {
     appendLog('[gui] Chain save failed: ' + res.error);
     return false;
@@ -687,6 +689,11 @@ chainName.addEventListener('input', () => {
   updateDirtyUI();
 });
 
+chainBindAddress.addEventListener('input', () => {
+  chainDirty = true;
+  updateDirtyUI();
+});
+
 editor.addEventListener('input', () => {
   parseProxyAddr(editor.value);
   if (!dirty) {
@@ -756,8 +763,12 @@ api.onEvent('vpn:readyz', (payload) => {
   // Update header proxy address when chain is connected
   if (chainId && state === 'connected') {
     const exitHop = payload.hops.find((h, i) => i === payload.hops.length - 1);
-    if (exitHop && exitHop.socksPort) {
-      proxyAddr.textContent = 'Socks5 at 127.0.0.1:' + exitHop.socksPort;
+    if (exitHop) {
+      if (exitHop.socksAddr) {
+        proxyAddr.textContent = 'Socks5 at ' + exitHop.socksAddr;
+      } else if (exitHop.socksPort) {
+        proxyAddr.textContent = 'Socks5 at 127.0.0.1:' + exitHop.socksPort;
+      }
     }
   }
 });

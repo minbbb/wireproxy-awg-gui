@@ -42,7 +42,7 @@ function nextName() {
 function list() {
   const chains = readChains();
   chains.sort((a, b) => a.created - b.created);
-  return chains.map((c) => ({ id: c.id, name: c.name, profileIds: [...c.profileIds] }));
+  return chains.map((c) => ({ id: c.id, name: c.name, profileIds: [...c.profileIds], bindAddress: c.bindAddress || '' }));
 }
 
 function get(id) {
@@ -52,6 +52,7 @@ function get(id) {
     id: chain.id,
     name: chain.name,
     profileIds: [...chain.profileIds],
+    bindAddress: chain.bindAddress || '',
     created: chain.created,
   };
 }
@@ -60,12 +61,12 @@ function create() {
   const chains = readChains();
   const id = crypto.randomUUID();
   const name = nextName();
-  chains.push({ id, name, profileIds: [], created: Date.now() });
+  chains.push({ id, name, profileIds: [], bindAddress: '', created: Date.now() });
   writeChains(chains);
   return { id, name };
 }
 
-function save(id, name, profileIds) {
+function save(id, name, profileIds, bindAddress) {
   const chains = readChains();
   const chain = chains.find((c) => c.id === id);
   if (!chain) throw new Error('Chain not found');
@@ -74,6 +75,7 @@ function save(id, name, profileIds) {
   chain.profileIds = Array.isArray(profileIds)
     ? profileIds.filter((x, i) => x && profileIds.indexOf(x) === i)
     : [];
+  chain.bindAddress = (bindAddress || '').trim();
   writeChains(chains);
 }
 

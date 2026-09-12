@@ -35,7 +35,7 @@ const SKIPPED_ROUTINE_SECTIONS = [
 
 let mainWindow = null;
 // hops[] — ordered list of running wireproxy instances (a chain). Each hop:
-// { profileId, name, proc, healthPort, confPath, socksPort|null, derivedConfPath|null, relay|null }
+// { profileId, name, proc, healthPort, confPath, socksPort|null, socksAddr|null, derivedConfPath|null, relay|null }
 let hops = [];
 let state = 'stopped';
 let activeIds = [];
@@ -137,6 +137,7 @@ async function pollHealth() {
       status: readyz.status || readyz.error,
       body: readyz.body || '',
       socksPort: h.socksPort || (h === hops[hops.length - 1] ? parseSocksPort(profiles.get(h.profileId)?.content || '') : null),
+      socksAddr: h.socksAddr || (h === hops[hops.length - 1] ? parseSocksAddr(profiles.get(h.profileId)?.content || '') : null),
     });
     if (readyz.error) unreachable = true;
     else if (readyz.status === 503) degraded = true;
@@ -149,7 +150,7 @@ async function pollHealth() {
   const exit = hops[hops.length - 1];
   if (exit && exit.proc && exit.proc.exitCode === null) {
     const metrics = await httpGet('/metrics', exit.healthPort);
-    if (!exit.proc || exit.proc.exitCode === null) return;
+    if (!exit.proc || exit.proc.exitCode !== null) return;
     if (!metrics.error && metrics.status === 200) {
       sendToRenderer('vpn:metrics', { text: metrics.body });
     }
@@ -267,7 +268,7 @@ function findPeerEndpoint(text) {
   return null;
 }
 
-function parseSocksPort(text) {
+function parseSocksAddr(text) {
   let inSocks = false;
   for (const raw of text.split(/\r?\n/)) {
     const t = raw.trim();
@@ -278,11 +279,17 @@ function parseSocksPort(text) {
     }
     if (inSocks) {
       const m = /^BindAddress\s*=\s*([^\s#]+)/i.exec(t);
-      if (m) {
-        const parsed = parseEndpoint(m[1]);
-        if (parsed) return parsed.port;
-      }
+      if (m) return m[1];
     }
+  }
+  return null;
+}
+
+function parseSocksPort(text) {
+  const addr = parseSocksAddr(text);
+  if (addr) {
+    const parsed = parseEndpoint(addr);
+    if (parsed) return parsed.port;
   }
   return null;
 }
@@ -306,9 +313,11 @@ function countPeerEndpoints(text) {
 
 // Builds a chain-hop config: rewritten peer endpoint (when relayPort), deterministic
 // Socks5 port (when socksPort; null preserves the original Socks5 section as-is).
-// Inner hops keep only the sections a hop needs (extra routine sections are dropped
-// to avoid port clashes); the exit hop (keepRoutines) keeps its full config —
-// incl. [http]/tunnels/auth — so chaining preserves the user's exit setup.
+// A chain-level bindAddress overrides the exit hop's [Socks5] BindAddress (injected
+// when the section is missing). Inner hops keep only the sections a hop needs (extra
+// routine sections are dropped to avoid port clashes); the exit hop (keepRoutines)
+// keeps its full config — incl. [http]/tunnels/auth — so chaining preserves the
+// user's exit setup.
 function buildDerivedConf(text, opts) {
   const out = [];
   let currentSection = null;
@@ -336,6 +345,8 @@ function buildDerivedConf(text, opts) {
       if (/^BindAddress\s*=/.test(trimmed)) {
         if (opts.socksPort != null) {
           out.push('BindAddress = 127.0.0.1:' + opts.socksPort);
+        } else if (opts.bindAddress) {
+          out.push('BindAddress = ' + opts.bindAddress);
         } else {
           out.push(line);
         }
@@ -349,10 +360,10 @@ function buildDerivedConf(text, opts) {
     }
     out.push(line);
   }
-  if (opts.socksPort != null && !out.some((l) => /^\[Socks5\]\s*$/i.test(l))) {
+  if ((opts.socksPort != null || opts.bindAddress) && !out.some((l) => /^\[Socks5\]\s*$/i.test(l))) {
     out.push('');
     out.push('[Socks5]');
-    out.push('BindAddress = 127.0.0.1:' + opts.socksPort);
+    out.push('BindAddress = ' + (opts.socksPort != null ? '127.0.0.1:' + opts.socksPort : opts.bindAddress));
   }
   return out.join('\n');
 }
@@ -368,6 +379,7 @@ function launchHop(profile, opts) {
     healthPort: opts.healthPort,
     confPath: opts.confPath,
     socksPort: opts.socksPort || null,
+    socksAddr: opts.socksAddr || null,
     derivedConfPath: opts.derivedConfPath || null,
     relay: null,
   };
@@ -466,9 +478,11 @@ async function startRun(items, opts) {
 
       // Every hop except the first routes its WG transport through the previous hop.
       // Every hop except the last exposes a deterministic Socks5 port for the next relay.
+      // A chain-level bindAddress forces the exit hop through a derived config too.
       const needsRewrite = i > 0 || !isLast;
+      const overrideBind = isLast && opts.bindAddress;
 
-      if (needsRewrite) {
+      if (needsRewrite || overrideBind) {
         if (i > 0) {
           const epCount = countPeerEndpoints(r.content);
           if (epCount === 0) {
@@ -493,6 +507,7 @@ async function startRun(items, opts) {
           socksPort,
           relayPort,
           keepRoutines: isLast,
+          bindAddress: overrideBind ? opts.bindAddress : null,
         });
         derivedConfPath = path.join(runDir, crypto.randomUUID() + '.conf');
         fs.writeFileSync(derivedConfPath, derived, 'utf8');
@@ -515,6 +530,7 @@ async function startRun(items, opts) {
         healthPort: await getFreePort(),
         silent: opts.silent,
         socksPort,
+        socksAddr: socksPort != null ? '127.0.0.1:' + socksPort : overrideBind ? opts.bindAddress : null,
         derivedConfPath,
       });
       mine.push(hop);
@@ -577,7 +593,7 @@ async function startChain(chainId, silent) {
     if (!profile) return { ok: false, output: 'Chain references a missing profile' };
     items.push({ profileId: id, content: profile.content });
   }
-  return startRun(items, { silent, chainId: chain.id });
+  return startRun(items, { silent, chainId: chain.id, bindAddress: chain.bindAddress || null });
 }
 
 function autostartEnabled() {
@@ -887,7 +903,7 @@ ipcMain.handle('chains:create', () => {
   }
 });
 
-ipcMain.handle('chains:save', (_e, id, name, profileIds) => {
+ipcMain.handle('chains:save', (_e, id, name, profileIds, bindAddress) => {
   try {
     if (!Array.isArray(profileIds) || profileIds.length === 0) {
       throw new Error('A chain needs at least one profile');
@@ -899,7 +915,11 @@ ipcMain.handle('chains:save', (_e, id, name, profileIds) => {
         throw new Error('Profile "' + p.name + '" has multiple [Peer] endpoints; chain hops support exactly one (extra endpoints would bypass the chain)');
       }
     }
-    chains.save(id, name, profileIds);
+    const ba = (bindAddress || '').trim();
+    if (ba && (!parseEndpoint(ba) || !parseEndpoint(ba).host)) {
+      throw new Error('BindAddress must be empty or "host:port" (e.g. 127.0.0.1:25344)');
+    }
+    chains.save(id, name, profileIds, ba);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };

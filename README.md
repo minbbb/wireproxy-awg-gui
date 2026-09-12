@@ -120,6 +120,7 @@ Rules and limits:
 
 - Create chains in the sidebar (**Chains → + New**), add profiles in order (top = outermost hop), Save, then Start. The status line shows the chain name; `[readyz]` lines show every hop; `/metrics` comes from the exit hop.
 - A profile used past the first hop must have exactly one `[Peer] Endpoint` — a second endpoint would be dialed directly, bypassing the chain, so the app refuses to save/start such chains.
+- Each chain can set an optional **SOCKS5 BindAddress** (e.g. `127.0.0.1:25344`) that overrides the exit hop's `[Socks5] BindAddress` — the proxy your apps actually use. Leave it empty to keep the profile's own setting; a custom host/port only needs to be entered in the chain, not in every profile.
 - One dead hop stops the whole chain (a partial chain is useless).
 - The default target for auto-connect (footer selector, tray menu) can be a profile or a chain. Legacy `defaultProfileId` settings keep working.
 - Chain definitions live in `userData/chains.json`; generated hop configs live in `userData/chain-run/` and are deleted on stop.

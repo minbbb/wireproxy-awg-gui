@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('wireproxyApi', {
     list: () => ipcRenderer.invoke('chains:list'),
     get: (id) => ipcRenderer.invoke('chains:get', id),
     create: () => ipcRenderer.invoke('chains:create'),
-    save: (id, name, profileIds) => ipcRenderer.invoke('chains:save', id, name, profileIds),
+    save: (id, name, profileIds, bindAddress) => ipcRenderer.invoke('chains:save', id, name, profileIds, bindAddress),
     rename: (id, name) => ipcRenderer.invoke('chains:rename', id, name),
     remove: (id) => ipcRenderer.invoke('chains:delete', id),
   },

@@ -43,6 +43,8 @@
         <div class="chain-editor-header">
           <label>Name</label>
           <input id="chainName" class="chain-name-input" placeholder="Chain name" />
+          <label for="chainBindAddress" title="Optional: overrides the exit hop's [Socks5] BindAddress. Empty = use the profile's own setting.">SOCKS5 BindAddress</label>
+          <input id="chainBindAddress" class="chain-name-input" placeholder="e.g. 127.0.0.1:25344" title="Optional: overrides the exit hop's [Socks5] BindAddress. Empty = use the profile's own setting." />
           <div class="chain-order-hint">Traffic goes through each profile in order (top = outermost hop).</div>
         </div>
         <div class="chain-add-row">
