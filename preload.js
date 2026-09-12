@@ -1,6 +1,9 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('wireproxyApi', {
+  app: {
+    info: () => ipcRenderer.invoke('app:info'),
+  },
   profiles: {
     list: () => ipcRenderer.invoke('profiles:list'),
     get: (id) => ipcRenderer.invoke('profiles:get', id),

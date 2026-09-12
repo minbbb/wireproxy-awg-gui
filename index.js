@@ -869,6 +869,8 @@ if (!gotSingleInstanceLock) {
   });
 }
 
+ipcMain.handle('app:info', () => ({ ok: true, version: app.getVersion() }));
+
 ipcMain.handle('profiles:list', () => {
   try {
     return { ok: true, profiles: profiles.list() };

@@ -782,6 +782,8 @@ api.onEvent('vpn:metrics', ({ text }) => {
 });
 
 (async () => {
+  const infoRes = await api.app.info();
+  if (infoRes.ok) document.getElementById('appVersion').textContent = 'v' + infoRes.version;
   const listRes = await api.profiles.list();
   const chainsRes = await api.chains.list();
   if (listRes.ok) profiles = listRes.profiles;
