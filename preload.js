@@ -10,6 +10,14 @@ contextBridge.exposeInMainWorld('wireproxyApi', {
     rename: (id, name) => ipcRenderer.invoke('profiles:rename', id, name),
     remove: (id) => ipcRenderer.invoke('profiles:delete', id),
   },
+  chains: {
+    list: () => ipcRenderer.invoke('chains:list'),
+    get: (id) => ipcRenderer.invoke('chains:get', id),
+    create: () => ipcRenderer.invoke('chains:create'),
+    save: (id, name, profileIds) => ipcRenderer.invoke('chains:save', id, name, profileIds),
+    rename: (id, name) => ipcRenderer.invoke('chains:rename', id, name),
+    remove: (id) => ipcRenderer.invoke('chains:delete', id),
+  },
   vpn: {
     start: (opts) => ipcRenderer.invoke('vpn:start', opts),
     stop: () => ipcRenderer.invoke('vpn:stop'),
@@ -19,7 +27,7 @@ contextBridge.exposeInMainWorld('wireproxyApi', {
     get: () => ipcRenderer.invoke('settings:get'),
     setAutostart: (enabled) => ipcRenderer.invoke('settings:setAutostart', enabled),
     setAutoconnect: (enabled) => ipcRenderer.invoke('settings:setAutoconnect', enabled),
-    setDefaultProfile: (id) => ipcRenderer.invoke('settings:setDefaultProfile', id),
+    setDefaultTarget: (kind, id) => ipcRenderer.invoke('settings:setDefaultTarget', kind, id),
   },
   onEvent: (channel, callback) => {
     const allowed = ['vpn:status', 'vpn:log', 'vpn:readyz', 'vpn:metrics'];

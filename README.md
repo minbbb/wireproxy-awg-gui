@@ -31,12 +31,13 @@ The result of a connection is a local SOCKS5/HTTP proxy whose address and port a
 ## Features
 
 - Connection profiles (create, rename, delete, save)
+- **Chains**: run traffic through several profiles in order (nested tunnels) — the exit hop exposes the proxy
 - Config editor with proxy-address parsing and quick save (Ctrl+S)
 - Config validation via the **Validate** button
 - Start/stop, connection status and logs, live `/metrics` stats
 - Configs persisted to files (not kept in memory)
 - System tray with show/hide, start/stop and settings checkboxes
-- Autostart on Windows login and auto-connect of the default profile on launch
+- Autostart on Windows login and auto-connect of the default profile or chain on launch
 
 ## Installing dependencies
 
@@ -109,12 +110,28 @@ Profiles live in `userData/profiles/` (Windows: `%APPDATA%\wireproxy-awg-gui\pro
 
 On first run a legacy `userData/wireproxy.conf` is migrated into a profile. The last remaining profile cannot be deleted.
 
+## Chains (nested tunnels)
+
+A chain runs traffic through several profiles in order: connection first goes through profile 1, then through profile 2, and so on. The proxy of the **last** (exit) profile is the one your apps use; the rest of the hops exist only to carry the nested tunnels.
+
+How it works: wireproxy itself cannot route its tunnel through an upstream proxy, so the app runs one `wireproxy.exe` per hop. Every hop except the first gets a generated config whose `[Peer] Endpoint` points at a local UDP relay, which forwards the (encrypted) WireGuard datagrams through the previous hop's SOCKS5 tunnel. Non-exit hops get a deterministic local `[Socks5]` port and lose the extra `[http]`/tunnel sections (to avoid port clashes); the exit hop keeps its full original config — only the endpoint is rewritten.
+
+Rules and limits:
+
+- Create chains in the sidebar (**Chains → + New**), add profiles in order (top = outermost hop), Save, then Start. The status line shows the chain name; `[readyz]` lines show every hop; `/metrics` comes from the exit hop.
+- A profile used past the first hop must have exactly one `[Peer] Endpoint` — a second endpoint would be dialed directly, bypassing the chain, so the app refuses to save/start such chains.
+- One dead hop stops the whole chain (a partial chain is useless).
+- The default target for auto-connect (footer selector, tray menu) can be a profile or a chain. Legacy `defaultProfileId` settings keep working.
+- Chain definitions live in `userData/chains.json`; generated hop configs live in `userData/chain-run/` and are deleted on stop.
+
 ## Repository layout
 
-- `index.js` — Electron main process: wireproxy spawn, state machine, health polling, IPC
+- `index.js` — Electron main process: wireproxy spawn, state machine, chain orchestration, health polling, IPC
 - `preload.js` — contextBridge (`window.wireproxyApi`), IPC channel allowlist
 - `profiles.js` — profile storage (no Electron, pure Node)
-- `settings.js` — app settings (`autostart`, `autoconnect`, `defaultProfileId`)
+- `chains.js` — chain definitions (no Electron, pure Node)
+- `relay.js` — UDP-over-SOCKS5 relay for chain hops (no Electron, pure Node)
+- `settings.js` — app settings (`autostart`, `autoconnect`, `defaultTarget`)
 - `tray.js` — system tray (icon, dynamic menu), wired from the main process
 - `renderer/` — UI in plain HTML/CSS/JS
 - `scripts/fetch-wireproxy.js` — wireproxy download/extract for builds

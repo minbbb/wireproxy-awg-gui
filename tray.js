@@ -37,8 +37,8 @@ class TrayController {
       Menu.buildFromTemplate([
         { label: s.windowVisible ? 'Hide window' : 'Show window', click: () => this.onToggleWindow() },
         { type: 'separator' },
-        { label: s.running ? 'Stop connection' : 'Start connection', enabled: s.running || s.hasDefaultProfile, click: () => this.onStartStop() },
-        { label: 'Default profile: ' + (s.defaultProfileName || 'none'), enabled: false },
+        { label: s.running ? 'Stop connection' : 'Start connection', enabled: s.running || s.hasDefaultTarget, click: () => this.onStartStop() },
+        { label: 'Default target: ' + (s.defaultTargetName || 'none'), enabled: false },
         { type: 'separator' },
         {
           label: 'Launch on Windows login',
@@ -50,7 +50,7 @@ class TrayController {
           label: 'Auto-connect on launch',
           type: 'checkbox',
           checked: s.autoconnect,
-          enabled: !!s.hasDefaultProfile,
+          enabled: !!s.hasDefaultTarget,
           click: () => this.onSetAutoconnect(!s.autoconnect),
         },
         { type: 'separator' },

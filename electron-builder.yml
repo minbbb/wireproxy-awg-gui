@@ -9,6 +9,8 @@ files:
   - preload.js
   - profiles.js
   - settings.js
+  - chains.js
+  - relay.js
   - tray.js
   - renderer/**
   - icon.png

@@ -22,14 +22,36 @@
 
   <div class="workspace">
     <aside class="sidebar">
-      <div class="sidebar-header">
-        <span>Profiles</span>
-        <button id="btnNewProfile" class="new-btn" title="Add new profile">+ New</button>
+      <div class="sidebar-section">
+        <div class="sidebar-header">
+          <span>Profiles</span>
+          <button id="btnNewProfile" class="new-btn" title="Add new profile">+ New</button>
+        </div>
+        <ul id="profileList" class="profile-list"></ul>
       </div>
-      <ul id="profileList" class="profile-list"></ul>
+      <div class="sidebar-section">
+        <div class="sidebar-header">
+          <span>Chains</span>
+          <button id="btnNewChain" class="new-btn" title="Add new chain">+ New</button>
+        </div>
+        <ul id="chainList" class="profile-list"></ul>
+      </div>
     </aside>
     <main>
       <textarea id="editor" spellcheck="false" placeholder="Select or create a profile"></textarea>
+      <div id="chainEditor" class="chain-editor hidden">
+        <div class="chain-editor-header">
+          <label>Name</label>
+          <input id="chainName" class="chain-name-input" placeholder="Chain name" />
+          <div class="chain-order-hint">Traffic goes through each profile in order (top = outermost hop).</div>
+        </div>
+        <div class="chain-add-row">
+          <select id="chainAddSelect" title="Profile to add as the next hop"></select>
+          <button id="btnChainAdd">+ Add hop</button>
+        </div>
+        <div id="chainEmpty" class="chain-empty">No profiles in this chain. Add at least one.</div>
+        <ul id="chainProfileList" class="chain-hop-list"></ul>
+      </div>
     </main>
   </div>
 
@@ -39,7 +61,7 @@
       <pre id="logPane" class="log-pane"></pre>
     </div>
     <div class="panel">
-      <div class="panel-title">Metrics (/metrics)</div>
+      <div class="panel-title">Metrics (exit hop /metrics)</div>
       <pre id="metricsPane" class="log-pane"></pre>
     </div>
   </section>
@@ -51,10 +73,10 @@
       <label class="settings-toggle" title="Start wireproxy-awg GUI on Windows login">
         <input type="checkbox" id="chkAutostart" /> Autostart
       </label>
-      <label class="settings-toggle" title="Automatically connect the default profile on app launch">
+      <label class="settings-toggle" title="Automatically connect the default profile or chain on app launch">
         <input type="checkbox" id="chkAutoconnect" /> Auto-connect
       </label>
-      <select id="selectDefaultProfile" title="Profile used for auto-connect"></select>
+      <select id="selectDefaultTarget" title="Profile or chain used for auto-connect"></select>
     </div>
     <button id="btnClearLog" class="clear-btn">Clear log</button>
   </footer>

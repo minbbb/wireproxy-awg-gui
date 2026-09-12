@@ -4,8 +4,11 @@ const http = require('http');
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const profiles = require('./profiles');
 const settings = require('./settings');
+const chains = require('./chains');
+const { UdpOverSocksRelay } = require('./relay');
 const TrayController = require('./tray');
 
 const WIREPROXY_PATH = app.isPackaged
@@ -21,14 +24,31 @@ const STATE_LABEL = {
   error: 'Error',
 };
 
+const DERIVED_CONF_DIRNAME = 'chain-run';
+const SKIPPED_ROUTINE_SECTIONS = [
+  'http',
+  'tcpclienttunnel',
+  'tcpservertunnel',
+  'stdiotunnel',
+  'udpproxytunnel',
+];
+
 let mainWindow = null;
-let child = null;
-let healthPort = null;
-let healthTimer = null;
+// hops[] — ordered list of running wireproxy instances (a chain). Each hop:
+// { profileId, name, proc, healthPort, confPath, socksPort|null, derivedConfPath|null, relay|null }
+let hops = [];
 let state = 'stopped';
-let activeProfileId = null;
+let activeIds = [];
+let chainId = null;
+let healthTimer = null;
+let runDir = null;
 let trayCtrl = null;
 let quitting = false;
+// Bumped by every operation that invalidates the current run (new start, stop,
+// unexpected hop exit, profile delete). The startup loop in startRun aborts when
+// its captured token no longer matches, so a superseded run never touches a
+// newer run's hops.
+let runToken = 0;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -44,7 +64,12 @@ function log(line) {
 
 function setState(newState) {
   state = newState;
-  sendToRenderer('vpn:status', { state, activeProfileId });
+  sendToRenderer('vpn:status', {
+    state,
+    activeProfileId: activeIds[activeIds.length - 1] || null,
+    activeIds,
+    chainId,
+  });
   if (trayCtrl) trayCtrl.sync();
 }
 
@@ -63,6 +88,12 @@ function getFreePort() {
   });
 }
 
+function removeFile(p) {
+  try {
+    fs.unlinkSync(p);
+  } catch {}
+}
+
 function runConfigTest(configPath) {
   return new Promise((resolve) => {
     const proc = spawn(WIREPROXY_PATH, ['-n', '-c', configPath], { windowsHide: true });
@@ -74,10 +105,10 @@ function runConfigTest(configPath) {
   });
 }
 
-function httpGet(httpPath) {
+function httpGet(httpPath, port) {
   return new Promise((resolve) => {
     const req = http.get(
-      { host: '127.0.0.1', port: healthPort, path: httpPath, timeout: 1500 },
+      { host: '127.0.0.1', port, path: httpPath, timeout: 1500 },
       (res) => {
         let body = '';
         res.on('data', (d) => { body += d.toString(); });
@@ -90,20 +121,38 @@ function httpGet(httpPath) {
 }
 
 async function pollHealth() {
-  if (!child || healthPort === null) return;
-  const readyz = await httpGet('/readyz');
-  if (!child || healthPort === null) return;
-  if (readyz.error) {
-    if (child.exitCode === null) setState('connecting');
-    return;
+  if (hops.length === 0) return;
+  const report = [];
+  let alive = false;
+  let unreachable = false;
+  let degraded = false;
+  for (const h of hops) {
+    if (!h.proc || h.proc.exitCode !== null) continue;
+    alive = true;
+    const readyz = await httpGet('/readyz', h.healthPort);
+    if (!h.proc || h.proc.exitCode !== null) return;
+    report.push({
+      profileId: h.profileId,
+      name: h.name,
+      status: readyz.status || readyz.error,
+      body: readyz.body || '',
+      socksPort: h.socksPort || (h === hops[hops.length - 1] ? parseSocksPort(profiles.get(h.profileId)?.content || '') : null),
+    });
+    if (readyz.error) unreachable = true;
+    else if (readyz.status === 503) degraded = true;
   }
-  if (readyz.status === 200) setState('connected');
-  else if (readyz.status === 503) setState('degraded');
-  sendToRenderer('vpn:readyz', readyz);
-  const metrics = await httpGet('/metrics');
-  if (!child || healthPort === null) return;
-  if (!metrics.error && metrics.status === 200) {
-    sendToRenderer('vpn:metrics', { text: metrics.body });
+  if (!alive) return;
+  if (unreachable) setState('connecting');
+  else if (degraded) setState('degraded');
+  else setState('connected');
+  sendToRenderer('vpn:readyz', { hops: report });
+  const exit = hops[hops.length - 1];
+  if (exit && exit.proc && exit.proc.exitCode === null) {
+    const metrics = await httpGet('/metrics', exit.healthPort);
+    if (!exit.proc || exit.proc.exitCode === null) return;
+    if (!metrics.error && metrics.status === 200) {
+      sendToRenderer('vpn:metrics', { text: metrics.body });
+    }
   }
 }
 
@@ -119,96 +168,416 @@ function stopHealthPolling() {
   }
 }
 
-function cleanupRunning() {
+function stopHop(h) {
+  if (h.relay) {
+    try { h.relay.stop(); } catch {}
+    h.relay = null;
+  }
+  if (h.derivedConfPath) {
+    const p = h.derivedConfPath;
+    if (h.proc && h.proc.exitCode === null) {
+      h.proc.once('exit', () => removeFile(p));
+    } else {
+      removeFile(p);
+    }
+    h.derivedConfPath = null;
+  }
+  if (h.proc && h.proc.exitCode === null) {
+    try {
+      h.proc.kill();
+    } catch {}
+  }
+}
+
+function onHopExit(hop, code) {
+  log('[gui] hop "' + hop.name + '" exited (code ' + code + ')');
+  if (hop.relay) {
+    try { hop.relay.stop(); } catch {}
+    hop.relay = null;
+  }
+  const idx = hops.indexOf(hop);
+  if (idx === -1) return;
+  if (state === 'validating') {
+    // Startup still in progress: let the startRun loop raise the real error
+    // via its liveness checks, so the user sees the cause, not a generic stop.
+    hops.splice(idx, 1);
+    return;
+  }
+  // Steady state: a chain is only valid as a whole, so one dead hop kills the run.
+  runToken++;
+  const rest = hops;
+  hops = [];
+  for (const h of rest) stopHop(h);
   stopHealthPolling();
-  child = null;
-  healthPort = null;
-  activeProfileId = null;
+  activeIds = [];
+  chainId = null;
+  setState('stopped');
+}
+
+async function stopCurrent() {
+  const old = hops;
+  hops = [];
+  const exits = old.map((h) => {
+    if (h.proc && h.proc.exitCode === null) {
+      return new Promise((resolve) => h.proc.once('exit', resolve));
+    }
+    return Promise.resolve();
+  });
+  for (const h of old) stopHop(h);
+  await Promise.all(exits);
+  stopHealthPolling();
 }
 
 function stopVpn() {
-  if (child && child.exitCode === null) {
+  runToken++;
+  const doomed = hops;
+  hops = [];
+  if (doomed.some((h) => h.proc && h.proc.exitCode === null)) {
     log('[gui] Stopping wireproxy...');
-    try {
-      child.kill();
-    } catch (e) {
-      log('[gui] Failed to stop wireproxy: ' + e.message);
-    }
-  } else {
-    cleanupRunning();
-    setState('stopped');
   }
+  for (const h of doomed) stopHop(h);
+  stopHealthPolling();
+  activeIds = [];
+  chainId = null;
+  setState('stopped');
+}
+
+function parseEndpoint(raw) {
+  const m = (raw || '').trim().match(/^(.+):(\d+)$/);
+  if (!m) return null;
+  let host = m[1];
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  return { host, port: parseInt(m[2], 10) };
+}
+
+function findPeerEndpoint(text) {
+  let inPeer = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const t = raw.trim();
+    const sec = /^\[([^\]]+)\]\s*$/.exec(t);
+    if (sec) {
+      inPeer = sec[1].toLowerCase() === 'peer';
+      continue;
+    }
+    if (inPeer) {
+      const m = /^Endpoint\s*=\s*(.+)$/i.exec(t);
+      if (m) return parseEndpoint(m[1]);
+    }
+  }
+  return null;
+}
+
+function parseSocksPort(text) {
+  let inSocks = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const t = raw.trim();
+    const sec = /^\[([^\]]+)\]\s*$/.exec(t);
+    if (sec) {
+      inSocks = sec[1].toLowerCase() === 'socks5';
+      continue;
+    }
+    if (inSocks) {
+      const m = /^BindAddress\s*=\s*([^\s#]+)/i.exec(t);
+      if (m) {
+        const parsed = parseEndpoint(m[1]);
+        if (parsed) return parsed.port;
+      }
+    }
+  }
+  return null;
+}
+
+// Counts [Peer] Endpoint lines. Hops past the first one must have exactly one:
+// a second endpoint would be dialed directly, bypassing the chain.
+function countPeerEndpoints(text) {
+  let inPeer = false;
+  let count = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const t = raw.trim();
+    const sec = /^\[([^\]]+)\]\s*$/.exec(t);
+    if (sec) {
+      inPeer = sec[1].toLowerCase() === 'peer';
+      continue;
+    }
+    if (inPeer && /^Endpoint\s*=\s*.+$/i.test(t)) count++;
+  }
+  return count;
+}
+
+// Builds a chain-hop config: rewritten peer endpoint (when relayPort), deterministic
+// Socks5 port (when socksPort; null preserves the original Socks5 section as-is).
+// Inner hops keep only the sections a hop needs (extra routine sections are dropped
+// to avoid port clashes); the exit hop (keepRoutines) keeps its full config —
+// incl. [http]/tunnels/auth — so chaining preserves the user's exit setup.
+function buildDerivedConf(text, opts) {
+  const out = [];
+  let currentSection = null;
+  let skipSection = false;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    const sec = /^\[([^\]]+)\]\s*$/.exec(trimmed);
+    if (sec) {
+      currentSection = sec[1].toLowerCase();
+      skipSection = !opts.keepRoutines && SKIPPED_ROUTINE_SECTIONS.includes(currentSection);
+      if (!skipSection) out.push(line);
+      continue;
+    }
+    if (skipSection) continue;
+    if (currentSection === 'peer') {
+      const m = /^Endpoint\s*=\s*(.*)$/i.exec(trimmed);
+      if (m && opts.relayPort) {
+        out.push('Endpoint = 127.0.0.1:' + opts.relayPort);
+        continue;
+      }
+      out.push(line);
+      continue;
+    }
+    if (currentSection === 'socks5') {
+      if (/^BindAddress\s*=/.test(trimmed)) {
+        if (opts.socksPort != null) {
+          out.push('BindAddress = 127.0.0.1:' + opts.socksPort);
+        } else {
+          out.push(line);
+        }
+        continue;
+      }
+      if (/^(Username|Password)\s*=/.test(trimmed) && opts.socksPort != null) {
+        continue;
+      }
+      out.push(line);
+      continue;
+    }
+    out.push(line);
+  }
+  if (opts.socksPort != null && !out.some((l) => /^\[Socks5\]\s*$/i.test(l))) {
+    out.push('');
+    out.push('[Socks5]');
+    out.push('BindAddress = 127.0.0.1:' + opts.socksPort);
+  }
+  return out.join('\n');
+}
+
+function launchHop(profile, opts) {
+  const args = ['-c', opts.confPath, '-i', '127.0.0.1:' + opts.healthPort];
+  if (opts.silent) args.push('-s');
+  const proc = spawn(WIREPROXY_PATH, args, { windowsHide: true });
+  const hop = {
+    profileId: profile.id,
+    name: profile.name,
+    proc,
+    healthPort: opts.healthPort,
+    confPath: opts.confPath,
+    socksPort: opts.socksPort || null,
+    derivedConfPath: opts.derivedConfPath || null,
+    relay: null,
+  };
+  proc.stdout.on('data', (d) => { log(d.toString().replace(/\s+$/, '')); });
+  proc.stderr.on('data', (d) => { log(d.toString().replace(/\s+$/, '')); });
+  proc.on('error', (err) => {
+    log('[gui] Failed to launch wireproxy: ' + err.message);
+  });
+  proc.on('exit', (code) => onHopExit(hop, code));
+  hops.push(hop);
+  log('[gui] hop "' + profile.name + '" started (PID ' + proc.pid + ', health port ' + opts.healthPort + ')');
+  return hop;
+}
+
+async function startRelay(hop, prevHop, realEndpoint, relayPort) {
+  const relay = new UdpOverSocksRelay({
+    socksHost: '127.0.0.1',
+    socksPort: prevHop.socksPort,
+    target: { host: realEndpoint.host, port: realEndpoint.port },
+    listenPort: relayPort,
+    debugLog: (m) => log('[relay ' + hop.profileId + '] ' + m),
+  });
+  hop.relay = relay;
+  await relay.start();
+}
+
+// items: [{ profileId, content }] in hop order (first = outermost).
+async function startRun(items, opts) {
+  const rendered = [];
+  for (const it of items) {
+    const profile = profiles.get(it.profileId);
+    if (!profile) return { ok: false, output: 'Profile not found' };
+    const content = it.content || profile.content;
+    rendered.push({ profileId: it.profileId, name: profile.name, content });
+  }
+  const ids = rendered.map((r) => r.profileId);
+  const token = ++runToken;
+  const mine = [];
+
+  // A superseded run must only touch its own hops, never a newer run's.
+  const abortIfSuperseded = () => {
+    if (token === runToken) return false;
+    for (const h of mine) {
+      const idx = hops.indexOf(h);
+      if (idx !== -1) hops.splice(idx, 1);
+      stopHop(h);
+    }
+    return true;
+  };
+  const assertMineAlive = () => {
+    for (const h of mine) {
+      if (!h.proc || h.proc.exitCode !== null) {
+        throw new Error('Hop "' + h.name + '" exited during startup (code ' + (h.proc ? h.proc.exitCode : 'n/a') + ')');
+      }
+    }
+  };
+
+  if (hops.length > 0) {
+    const same =
+      activeIds.length === ids.length &&
+      activeIds.every((id, i) => id === ids[i]);
+    if (same) return { ok: false, output: 'Already running' };
+    log('[gui] Stopping current connection to switch...');
+    await stopCurrent();
+    if (abortIfSuperseded()) {
+      return { ok: false, output: 'Superseded by a newer connection' };
+    }
+  }
+
+  chainId = opts.chainId || null;
+  activeIds = ids.slice();
+  setState('validating');
+
+  try {
+    for (let i = 0; i < rendered.length; i++) {
+      const r = rendered[i];
+      const profile = profiles.get(r.profileId);
+      const originalConfPath = profiles.confPath(r.profileId);
+      const test = await runConfigTest(originalConfPath);
+      if (abortIfSuperseded()) {
+        return { ok: false, output: 'Superseded by a newer connection' };
+      }
+      assertMineAlive();
+      if (test.code !== 0) {
+        throw new Error(
+          'Config error in "' + r.name + '": ' + (test.stderr || test.stdout || ('code ' + test.code))
+        );
+      }
+
+      const isLast = i === rendered.length - 1;
+      let confPath = originalConfPath;
+      let derivedConfPath = null;
+      let socksPort = null;
+      let relayPort = null;
+      let realEndpoint = null;
+
+      // Every hop except the first routes its WG transport through the previous hop.
+      // Every hop except the last exposes a deterministic Socks5 port for the next relay.
+      const needsRewrite = i > 0 || !isLast;
+
+      if (needsRewrite) {
+        if (i > 0) {
+          const epCount = countPeerEndpoints(r.content);
+          if (epCount === 0) {
+            throw new Error(
+              'Profile "' + r.name + '" has no [Peer] Endpoint; cannot be used as a chain hop'
+            );
+          }
+          if (epCount > 1) {
+            throw new Error(
+              'Profile "' + r.name + '" has ' + epCount + ' [Peer] endpoints; chain hops support exactly one (extra endpoints would bypass the chain)'
+            );
+          }
+          realEndpoint = findPeerEndpoint(r.content);
+          relayPort = await getFreePort();
+          if (abortIfSuperseded()) {
+            return { ok: false, output: 'Superseded by a newer connection' };
+          }
+          assertMineAlive();
+        }
+        socksPort = isLast ? null : await getFreePort();
+        const derived = buildDerivedConf(r.content, {
+          socksPort,
+          relayPort,
+          keepRoutines: isLast,
+        });
+        derivedConfPath = path.join(runDir, crypto.randomUUID() + '.conf');
+        fs.writeFileSync(derivedConfPath, derived, 'utf8');
+        const t2 = await runConfigTest(derivedConfPath);
+        if (abortIfSuperseded()) {
+          removeFile(derivedConfPath);
+          return { ok: false, output: 'Superseded by a newer connection' };
+        }
+        assertMineAlive();
+        if (t2.code !== 0) {
+          throw new Error(
+            'Derived config invalid for "' + r.name + '": ' + (t2.stderr || t2.stdout || ('code ' + t2.code))
+          );
+        }
+        confPath = derivedConfPath;
+      }
+
+      const hop = launchHop(profile, {
+        confPath,
+        healthPort: await getFreePort(),
+        silent: opts.silent,
+        socksPort,
+        derivedConfPath,
+      });
+      mine.push(hop);
+      if (abortIfSuperseded()) {
+        return { ok: false, output: 'Superseded by a newer connection' };
+      }
+      assertMineAlive();
+
+      if (relayPort !== null && realEndpoint) {
+        await startRelay(hop, hops[i - 1], realEndpoint, relayPort);
+        if (abortIfSuperseded()) {
+          return { ok: false, output: 'Superseded by a newer connection' };
+        }
+        assertMineAlive();
+      }
+    }
+  } catch (e) {
+    const exits = [];
+    for (const h of mine) {
+      const idx = hops.indexOf(h);
+      if (idx !== -1) hops.splice(idx, 1);
+      if (h.proc && h.proc.exitCode === null) {
+        exits.push(new Promise((resolve) => h.proc.once('exit', resolve)));
+      }
+      stopHop(h);
+    }
+    await Promise.all(exits);
+    stopHealthPolling();
+    if (token === runToken) setState('error');
+    return { ok: false, output: e.message };
+  }
+
+  setState('connecting');
+  startHealthPolling();
+  log('[gui] connection started: ' + ids.join(' -> '));
+  return { ok: true };
 }
 
 async function startVpn(id, text, silent) {
   const profile = profiles.get(id);
   if (!profile) return { ok: false, output: 'Profile not found' };
-
-  if (child && child.exitCode === null) {
-    if (activeProfileId === id) return { ok: false, output: 'Already running' };
-    log('[gui] Stopping current connection to switch...');
-    const oldChild = child;
-    child = null;
-    oldChild.kill();
-    await new Promise((resolve) => oldChild.once('exit', resolve));
-  }
-
-  activeProfileId = id;
-  setState('validating');
-
+  const content = text || profile.content;
   try {
-    profiles.save(id, text);
+    profiles.save(id, content);
   } catch (e) {
-    cleanupRunning();
-    setState('error');
     return { ok: false, output: 'Failed to save config: ' + e.message };
   }
+  return startRun([{ profileId: id, content }], { silent, chainId: null });
+}
 
-  const test = await runConfigTest(profiles.confPath(id));
-  if (test.code !== 0) {
-    setState('error');
-    const output = test.stderr || test.stdout || 'Config error (code ' + test.code + ')';
-    log('[gui] Validation failed: ' + output);
-    return { ok: false, output };
+async function startChain(chainId, silent) {
+  const chain = chains.get(chainId);
+  if (!chain) return { ok: false, output: 'Chain not found' };
+  if (chain.profileIds.length === 0) {
+    return { ok: false, output: 'Chain "' + chain.name + '" has no profiles' };
   }
-  log('[gui] Config OK (' + profile.name + ')');
-
-  try {
-    healthPort = await getFreePort();
-  } catch (e) {
-    cleanupRunning();
-    setState('error');
-    log('[gui] Failed to allocate health port: ' + e.message);
-    return { ok: false, output: e.message };
+  const items = [];
+  for (const id of chain.profileIds) {
+    const profile = profiles.get(id);
+    if (!profile) return { ok: false, output: 'Chain references a missing profile' };
+    items.push({ profileId: id, content: profile.content });
   }
-
-  return new Promise((resolve) => {
-    const args = ['-c', profiles.confPath(id), '-i', '127.0.0.1:' + healthPort];
-    if (silent) args.push('-s');
-    const proc = spawn(WIREPROXY_PATH, args, { windowsHide: true });
-    child = proc;
-    proc.stdout.on('data', (d) => { log(d.toString().replace(/\s+$/, '')); });
-    proc.stderr.on('data', (d) => { log(d.toString().replace(/\s+$/, '')); });
-    proc.on('error', (err) => {
-      log('[gui] Failed to launch wireproxy: ' + err.message);
-      cleanupRunning();
-      setState('error');
-      resolve({ ok: false, output: err.message });
-    });
-    proc.on('exit', (code) => {
-      log('[gui] wireproxy exited (code ' + code + ')');
-      stopHealthPolling();
-      if (child === proc) {
-        cleanupRunning();
-        setState('stopped');
-      }
-      resolve({ ok: false, output: 'Process exited with code ' + code });
-    });
-    setState('connecting');
-    startHealthPolling();
-    log('[gui] wireproxy started (PID ' + proc.pid + ', health port ' + healthPort + ')');
-    resolve({ ok: true });
-  });
+  return startRun(items, { silent, chainId: chain.id });
 }
 
 function autostartEnabled() {
@@ -230,34 +599,65 @@ function applyAutostart(enabled) {
   app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath, args: [app.getAppPath()] });
 }
 
-function trayState() {
+function defaultTarget() {
   const s = settings.get();
-  const profile = s.defaultProfileId && profiles.get(s.defaultProfileId);
+  if (s.defaultTarget && s.defaultTarget.id) {
+    return { kind: s.defaultTarget.kind, id: s.defaultTarget.id };
+  }
+  if (s.defaultProfileId) {
+    return { kind: 'profile', id: s.defaultProfileId };
+  }
+  return null;
+}
+
+function targetExists(kind, id) {
+  if (kind === 'chain') return !!chains.get(id);
+  return !!profiles.get(id);
+}
+
+function targetName(kind, id) {
+  if (!id) return null;
+  if (kind === 'chain') {
+    const c = chains.get(id);
+    return c ? c.name : null;
+  }
+  const p = profiles.get(id);
+  return p ? p.name : null;
+}
+
+function trayState() {
+  const target = defaultTarget();
   return {
     stateLabel: STATE_LABEL[state] || state,
     windowVisible: !!(mainWindow && mainWindow.isVisible()),
-    running: !!(child && child.exitCode === null),
+    running: hops.some((h) => h.proc && h.proc.exitCode === null),
     autostart: autostartEnabled(),
-    autoconnect: !!s.autoconnect,
-    defaultProfileName: profile ? profile.name : null,
-    hasDefaultProfile: !!profile,
+    autoconnect: !!settings.get().autoconnect,
+    defaultTargetName: target ? targetName(target.kind, target.id) : null,
+    hasDefaultTarget: !!(target && targetName(target.kind, target.id)),
   };
 }
 
 function maybeAutoConnect() {
   const s = settings.get();
   if (!s.autoconnect) return;
-  const profile = s.defaultProfileId && profiles.get(s.defaultProfileId);
-  if (!profile) {
-    log('[gui] Auto-connect skipped: default profile is missing');
+  const target = defaultTarget();
+  if (!target || !targetExists(target.kind, target.id)) {
+    log('[gui] Auto-connect skipped: default target is missing');
     return;
   }
-  if (child && child.exitCode === null) {
+  if (hops.some((h) => h.proc && h.proc.exitCode === null)) {
     log('[gui] Auto-connect skipped: connection already running');
     return;
   }
-  log('[gui] Auto-connecting "' + profile.name + '"...');
-  startVpn(profile.id, profile.content, false);
+  const name = targetName(target.kind, target.id);
+  log('[gui] Auto-connecting "' + name + '"...');
+  if (target.kind === 'chain') {
+    startChain(target.id, false);
+  } else {
+    const profile = profiles.get(target.id);
+    startVpn(profile.id, profile.content, false);
+  }
 }
 
 if (!gotSingleInstanceLock) {
@@ -273,9 +673,7 @@ if (!gotSingleInstanceLock) {
 
   app.on('before-quit', () => {
     quitting = true;
-    if (child && child.exitCode === null) {
-      child.kill();
-    }
+    for (const h of hops) stopHop(h);
   });
 
   app.on('will-quit', () => {
@@ -290,8 +688,15 @@ if (!gotSingleInstanceLock) {
   });
 
   app.whenReady().then(() => {
-    profiles.init(app.getPath('userData'));
-    settings.init(app.getPath('userData'));
+    const userData = app.getPath('userData');
+    profiles.init(userData);
+    settings.init(userData);
+    chains.init(userData);
+    runDir = path.join(userData, DERIVED_CONF_DIRNAME);
+    fs.mkdirSync(runDir, { recursive: true });
+    try {
+      for (const f of fs.readdirSync(runDir)) removeFile(path.join(runDir, f));
+    } catch {}
 
     trayCtrl = new TrayController({
       iconPath: path.join(__dirname, 'icon.png'),
@@ -307,13 +712,18 @@ if (!gotSingleInstanceLock) {
         }
       },
       onStartStop: () => {
-        if (child && child.exitCode === null) {
+        if (hops.some((h) => h.proc && h.proc.exitCode === null)) {
           stopVpn();
           return;
         }
-        const s = settings.get();
-        const profile = s.defaultProfileId && profiles.get(s.defaultProfileId);
-        if (profile) startVpn(profile.id, profile.content, false);
+        const target = defaultTarget();
+        if (!target || !targetExists(target.kind, target.id)) return;
+        if (target.kind === 'chain') {
+          startChain(target.id, false);
+        } else {
+          const profile = profiles.get(target.id);
+          startVpn(profile.id, profile.content, false);
+        }
       },
       onSetAutostart: (enabled) => {
         try {
@@ -325,7 +735,7 @@ if (!gotSingleInstanceLock) {
         syncTray();
       },
       onSetAutoconnect: (enabled) => {
-        if (enabled && !settings.get().defaultProfileId) return;
+        if (enabled && !defaultTarget()) return;
         settings.save({ autoconnect: !!enabled });
         syncTray();
       },
@@ -410,14 +820,16 @@ ipcMain.handle('profiles:rename', (_e, id, name) => {
 
 ipcMain.handle('profiles:delete', async (_e, id) => {
   try {
-    if (activeProfileId === id && child && child.exitCode === null) {
+    if (activeIds.includes(id) && hops.some((h) => h.proc && h.proc.exitCode === null)) {
       log('[gui] Stopping connection before delete...');
-      child.kill();
-      await new Promise((resolve) => child.once('exit', resolve));
+      runToken++;
+      await stopCurrent();
     }
     profiles.remove(id);
-    if (settings.get().defaultProfileId === id) {
-      settings.save({ defaultProfileId: null, autoconnect: false });
+    chains.pruneDeletedProfiles(profiles.list().map((p) => p.id));
+    const target = defaultTarget();
+    if (target && target.id === id) {
+      settings.save({ defaultTarget: null, autoconnect: false });
       syncTray();
     }
     return { ok: true };
@@ -427,9 +839,13 @@ ipcMain.handle('profiles:delete', async (_e, id) => {
 });
 
 ipcMain.handle('vpn:start', (_e, opts) => {
-  const text = (opts && opts.text) || '';
   const silent = !!(opts && opts.silent);
+  if (opts && opts.chainId) {
+    return startChain(opts.chainId, silent);
+  }
+  const text = (opts && opts.text) || '';
   const id = opts && opts.id;
+  if (!id) return { ok: false, output: 'Nothing to start' };
   return startVpn(id, text, silent);
 });
 
@@ -439,17 +855,93 @@ ipcMain.handle('vpn:stop', () => {
 });
 
 ipcMain.handle('vpn:state', () => {
-  return { state, running: !!(child && child.exitCode === null), activeProfileId, healthPort };
+  return {
+    state,
+    running: hops.some((h) => h.proc && h.proc.exitCode === null),
+    activeProfileId: activeIds[activeIds.length - 1] || null,
+    activeIds,
+    chainId,
+  };
+});
+
+ipcMain.handle('chains:list', () => {
+  try {
+    const all = chains.list();
+    return { ok: true, chains: all, profiles: profiles.list() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('chains:get', (_e, id) => {
+  const chain = chains.get(id);
+  return chain ? { ok: true, chain, profiles: profiles.list() } : { ok: false, error: 'Chain not found' };
+});
+
+ipcMain.handle('chains:create', () => {
+  try {
+    const chain = chains.create();
+    return { ok: true, chain };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('chains:save', (_e, id, name, profileIds) => {
+  try {
+    if (!Array.isArray(profileIds) || profileIds.length === 0) {
+      throw new Error('A chain needs at least one profile');
+    }
+    for (const pid of profileIds) {
+      const p = profiles.get(pid);
+      if (!p) throw new Error('Chain references a missing profile');
+      if (countPeerEndpoints(p.content) > 1) {
+        throw new Error('Profile "' + p.name + '" has multiple [Peer] endpoints; chain hops support exactly one (extra endpoints would bypass the chain)');
+      }
+    }
+    chains.save(id, name, profileIds);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('chains:rename', (_e, id, name) => {
+  try {
+    chains.rename(id, name);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('chains:delete', (_e, id) => {
+  try {
+    if (chainId === id && hops.some((h) => h.proc && h.proc.exitCode === null)) {
+      stopVpn();
+    }
+    chains.remove(id);
+    const target = defaultTarget();
+    if (target && target.kind === 'chain' && target.id === id) {
+      settings.save({ defaultTarget: null, autoconnect: false });
+      syncTray();
+    }
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 ipcMain.handle('settings:get', () => {
   const s = settings.get();
+  const target = defaultTarget();
   return {
     ok: true,
     autostart: autostartEnabled(),
     autoconnect: !!s.autoconnect,
-    defaultProfileId: s.defaultProfileId || null,
+    defaultTarget: target,
     profiles: profiles.list(),
+    chains: chains.list(),
   };
 });
 
@@ -466,17 +958,22 @@ ipcMain.handle('settings:setAutostart', (_e, enabled) => {
 
 ipcMain.handle('settings:setAutoconnect', (_e, enabled) => {
   const on = !!enabled;
-  if (on && !settings.get().defaultProfileId) {
-    return { ok: false, error: 'Set a default profile first' };
+  if (on && !defaultTarget()) {
+    return { ok: false, error: 'Set a default target first' };
   }
   settings.save({ autoconnect: on });
   syncTray();
   return { ok: true };
 });
 
-ipcMain.handle('settings:setDefaultProfile', (_e, id) => {
-  if (id && !profiles.get(id)) return { ok: false, error: 'Profile not found' };
-  settings.save({ defaultProfileId: id || null, autoconnect: id ? settings.get().autoconnect : false });
+ipcMain.handle('settings:setDefaultTarget', (_e, kind, id) => {
+  const cleanKind = kind === 'chain' ? 'chain' : 'profile';
+  if (id) {
+    if (!targetExists(cleanKind, id)) {
+      return { ok: false, error: 'Target not found' };
+    }
+  }
+  settings.save({ defaultTarget: id ? { kind: cleanKind, id } : null, autoconnect: id ? settings.get().autoconnect : false });
   syncTray();
   return { ok: true };
 });

@@ -7,6 +7,7 @@ const DEFAULTS = {
   autostart: false,
   autoconnect: false,
   defaultProfileId: null,
+  defaultTarget: null,
 };
 
 let filePath = null;
