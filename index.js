@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const { spawn } = require('child_process');
 const http = require('http');
 const net = require('net');
@@ -846,6 +846,7 @@ if (!gotSingleInstanceLock) {
       },
     });
 
+    Menu.setApplicationMenu(null);
     mainWindow = new BrowserWindow({
       width: 1100,
       height: 760,
