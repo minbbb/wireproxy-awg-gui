@@ -730,6 +730,7 @@ function targetName(kind, id) {
 function trayState() {
   const target = defaultTarget();
   return {
+    state,
     stateLabel: STATE_LABEL[state] || state,
     windowVisible: !!(mainWindow && mainWindow.isVisible()),
     running: hops.some((h) => h.proc && h.proc.exitCode === null),
