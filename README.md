@@ -4,7 +4,7 @@
 
 GUI for [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) — a userspace AmneziaWG client (WireGuard with obfuscation) that exposes access to the tunnel as a SOCKS5/HTTP proxy.
 
-## What it is
+## What is this
 
 This is **just a wrapper**: the app itself does not establish connections or encrypt any traffic. All the actual work is done by the `wireproxy.exe` binary from the releases of the [artem-russkikh/wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) project. The GUI provides config editing, validation, start/stop, and connection monitoring.
 
@@ -22,8 +22,8 @@ Electron GUI (renderer + main process)
 1. Before every start the config is checked in validation mode (`-n`, prints `Config OK`). On failure → state `error`, no start.
 2. A free port is picked and `wireproxy.exe` is launched with `-i 127.0.0.1:<port>`, which enables the health endpoint.
 3. Every second the GUI polls:
-   - `GET /readyz` — 200 → `connected`, 503 → `degraded`, unreachable → `connecting`;
-   - `GET /metrics` — wireguard stats (`wg show`), shown in the Metrics pane.
+    - `GET /readyz` — 200 → `connected`, 503 → `degraded`, unreachable → `connecting`;
+    - `GET /metrics` — wireguard stats (`wg show`), shown in the Metrics pane.
 4. Stop is done via `kill()` on the child process (`-d` daemon mode is **not** used; the PID is tracked directly).
 
 The result of a connection is a local SOCKS5/HTTP proxy whose address and port are set in the config (`[Socks5]` / `[http]`, `BindAddress`).
@@ -90,13 +90,13 @@ To upgrade, change `version` and `sha256` (take the hash from the release's `che
 
 INI format. Full documentation lives in the [wireproxy-awg project README](https://github.com/artem-russkikh/wireproxy-awg). Key sections:
 
-| Section | Purpose |
-| --- | --- |
-| `[Interface]` | interface params, incl. AmneziaWG obfuscation (Jc/Jmin/Jmax, S1-S4, H1-H4, I1-I5) |
-| `[Peer]` | peer key, endpoint, AllowedIPs, PersistentKeepalive |
-| `[Socks5]` / `[http]` | SOCKS5 / HTTP(S) proxy (`BindAddress`, optional auth / CertFile / KeyFile) |
-| `[TCPClientTunnel]` / `[TCPServerTunnel]` / `[STDIOTunnel]` / `[UDPProxyTunnel]` | tunnels |
-| `[Resolve]` | DNS strategy: `ipv4` / `ipv6` / `auto` (default `auto`) |
+| Section                                                                          | Purpose                                                                           |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `[Interface]`                                                                    | interface params, incl. AmneziaWG obfuscation (Jc/Jmin/Jmax, S1-S4, H1-H4, I1-I5) |
+| `[Peer]`                                                                         | peer key, endpoint, AllowedIPs, PersistentKeepalive                               |
+| `[Socks5]` / `[http]`                                                            | SOCKS5 / HTTP(S) proxy (`BindAddress`, optional auth / CertFile / KeyFile)        |
+| `[TCPClientTunnel]` / `[TCPServerTunnel]` / `[STDIOTunnel]` / `[UDPProxyTunnel]` | tunnels                                                                           |
+| `[Resolve]`                                                                      | DNS strategy: `ipv4` / `ipv6` / `auto` (default `auto`)                           |
 
 Gotchas: the top-level `WGConfig = <path>` imports an existing AmneziaWG/WireGuard config; AmneziaWG params go directly into `[Interface]`; values starting with `$` are resolved from environment variables (`$$` is a literal `$`).
 
