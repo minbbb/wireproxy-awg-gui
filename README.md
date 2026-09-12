@@ -2,7 +2,7 @@
 
 > [Русская версия](README.ru.md)
 
-GUI for [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) — a userspace AmneziaWG client (WireGuard with obfuscation) that exposes access to the tunnel as a SOCKS5/HTTP proxy.
+GUI for [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) — a userspace AmneziaWG/WireGuard client that exposes access to the tunnel as a SOCKS5/HTTP proxy. Both regular WireGuard configs and AmneziaWG configs (WireGuard with obfuscation) are supported.
 
 ## What is this
 
@@ -16,7 +16,7 @@ Electron GUI (renderer + main process)
         │ 2) spawn:    wireproxy -c <conf> -i 127.0.0.1:<freeport>
         │ 3) monitor:  poll the health endpoint every second
         ▼
-   wireproxy.exe ──── AmneziaWG tunnel ──── SOCKS5/HTTP proxy (per config)
+   wireproxy.exe ──── AmneziaWG/WireGuard tunnel ──── SOCKS5/HTTP proxy (per config)
 ```
 
 1. Before every start the config is checked in validation mode (`-n`, prints `Config OK`). On failure → state `error`, no start.
@@ -30,7 +30,7 @@ The result of a connection is a local SOCKS5/HTTP proxy whose address and port a
 
 ## Features
 
-- Connection profiles (create, rename, delete, save)
+- Connection profiles (create, rename, delete, save) — regular WireGuard **and** AmneziaWG configs
 - **Chains**: run traffic through several profiles in order (nested tunnels) — the exit hop exposes the proxy
 - Config editor with proxy-address parsing and quick save (Ctrl+S)
 - Config validation via the **Validate** button

@@ -2,7 +2,7 @@
 
 > [English version](README.md)
 
-GUI для [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) — userspace-клиента AmneziaWG (WireGuard с обфускацией), который предоставляет доступ в туннель в виде SOCKS5/HTTP прокси.
+GUI для [wireproxy-awg](https://github.com/artem-russkikh/wireproxy-awg) — userspace-клиента AmneziaWG/WireGuard, который предоставляет доступ в туннель в виде SOCKS5/HTTP прокси. Поддерживаются как обычные конфиги WireGuard, так и конфиги AmneziaWG (WireGuard с обфускацией).
 
 ## Что это
 
@@ -16,7 +16,7 @@ Electron GUI (renderer + main process)
         │ 2) спавн:     wireproxy -c <conf> -i 127.0.0.1:<freeport>
         │ 3) мониторинг: опрос health endpoint каждые 1 с
         ▼
-   wireproxy.exe ──── AmneziaWG-туннель ──── SOCKS5/HTTP прокси (по конфигу)
+   wireproxy.exe ──── AmneziaWG/WireGuard-туннель ──── SOCKS5/HTTP прокси (по конфигу)
 ```
 
 1. Перед каждым стартом конфиг проверяется в режиме валидации (`-n`, печатает `Config OK`). Неудача → состояние `error`, запуск не происходит.
@@ -30,7 +30,7 @@ Electron GUI (renderer + main process)
 
 ## Возможности
 
-- Профили подключений (создание, переименование, удаление, сохранение)
+- Профили подключений (создание, переименование, удаление, сохранение) — поддерживаются и обычные конфиги WireGuard, и конфиги AmneziaWG
 - **Цепочки**: прогон трафика через несколько профилей по порядку (вложенные туннели) — прокси торчит из последнего профиля цепочки
 - Редактор конфига с разбором адреса прокси и быстрым сохранением (Ctrl+S)
 - Валидация конфига кнопкой **Validate**
