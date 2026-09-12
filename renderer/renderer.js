@@ -269,10 +269,10 @@ function renderChainEditor() {
   }
 }
 
-function enterChainMode(id) {
+function enterChainMode(id, chainData) {
   mode = 'chain';
   selectedChainId = id;
-  const chain = chains.find((x) => x.id === id);
+  const chain = chainData || chains.find((x) => x.id === id);
   chainProfileIds = chain ? [...chain.profileIds] : [];
   chainName.value = chain ? chain.name : '';
   chainBindAddress.value = chain ? (chain.bindAddress || '') : '';
@@ -291,7 +291,7 @@ async function loadChain(id) {
     appendLog('[gui] Failed to load chain: ' + res.error);
     return;
   }
-  enterChainMode(id);
+  enterChainMode(id, res.chain);
 }
 
 function enterProfileMode(id) {
@@ -458,7 +458,11 @@ async function saveChain() {
     return false;
   }
   const c = chains.find((x) => x.id === selectedChainId);
-  if (c) c.name = name;
+  if (c) {
+    c.name = name;
+    c.profileIds = [...chainProfileIds];
+    c.bindAddress = chainBindAddress.value.trim();
+  }
   chainDirty = false;
   updateDirtyUI();
   renderListsAndDefault();
