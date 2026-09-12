@@ -1,6 +1,6 @@
 {
     "name": "wireproxy-awg-gui",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "GUI for AmneziaWG compatible wireguard client that exposes itself as a socks5 proxy",
     "license": "MIT",
     "author": "minbbb",
