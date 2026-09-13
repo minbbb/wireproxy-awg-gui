@@ -102,10 +102,23 @@ function verifyVersion(exe) {
   }
 }
 
+const NO_SKIP = process.argv.includes('--no-skip');
+
 (async () => {
+  fs.mkdirSync(BIN_DIR, { recursive: true });
+
+  if (!NO_SKIP && fs.existsSync(EXE_PATH)) {
+    try {
+      verifyVersion(EXE_PATH);
+      log('already up to date, skipping (use -- --no-skip to re-download)');
+      return;
+    } catch (_) {
+      log('existing binary version mismatch, re-downloading');
+    }
+  }
+
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wireproxy-dl-'));
   try {
-    fs.mkdirSync(BIN_DIR, { recursive: true });
     const tarball = path.join(tmpRoot, CONF.asset);
     const extractDir = path.join(tmpRoot, 'extract');
     fs.mkdirSync(extractDir, { recursive: true });
