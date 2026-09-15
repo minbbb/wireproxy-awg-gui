@@ -12,6 +12,9 @@ files:
   - chains.js
   - relay.js
   - tray.js
+  - core/**
+  - services/**
+  - ipc/**
   - renderer/**
   - icon.png
   - package.json

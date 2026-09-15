@@ -18,7 +18,7 @@
         "start": "electron .",
         "fetch:wireproxy": "node scripts/fetch-wireproxy.js",
         "dist": "npm run fetch:wireproxy && electron-builder --win",
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "test": "node --test"
     },
     "devDependencies": {
         "electron": "^37.0.0",
