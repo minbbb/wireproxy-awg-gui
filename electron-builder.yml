@@ -7,10 +7,6 @@ directories:
 files:
   - index.js
   - preload.js
-  - profiles.js
-  - settings.js
-  - chains.js
-  - relay.js
   - tray.js
   - core/**
   - services/**

@@ -129,12 +129,11 @@ Rules and limits:
 
 - `index.js` — Electron main process: wireproxy spawn, state machine, chain orchestration, health polling, IPC
 - `preload.js` — contextBridge (`window.wireproxyApi`), IPC channel allowlist
-- `profiles.js` — profile storage (no Electron, pure Node)
-- `chains.js` — chain definitions (no Electron, pure Node)
-- `relay.js` — UDP-over-SOCKS5 relay for chain hops (no Electron, pure Node)
-- `settings.js` — app settings (`autostart`, `autoconnect`, `defaultTarget`)
+- `core/` — pure-Node modules (no Electron): `vpn-engine.js`, `config-parser.js`, `metrics.js`, `derived-config.js`, `process-utils.js`, `wireproxy-path.js`, `profiles.js` (profile storage), `chains.js` (chain definitions), `relay.js` (UDP-over-SOCKS5 relay for chain hops), `settings.js` (app settings: `autostart`, `autoconnect`, `defaultTarget`)
+- `services/` — dependency-injected services (`targets.js`, `autostart.js`, `settings-actions.js`)
+- `ipc/handlers.js` — IPC handler registration (delegates to core/services)
 - `tray.js` — system tray (icon, dynamic menu), wired from the main process
-- `renderer/` — UI in plain HTML/CSS/JS
+- `renderer/` — UI in plain HTML/CSS/JS (`state.js` + `ui.js` + `renderer.js`)
 - `scripts/fetch-wireproxy.js` — wireproxy download/extract for builds
 - `electron-builder.yml` — packaging config (portable win)
 - `icon.png` — app/window/tray icon

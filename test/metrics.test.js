@@ -24,7 +24,7 @@ test('formatHandshake', () => {
   assert.strictEqual(formatHandshake(0), 'never');
   assert.strictEqual(formatHandshake(-5), 'never');
   assert.strictEqual(formatHandshake('nan'), 'never');
-  assert.strictEqual(formatHandshake(NOW + 1), 'just now');
+  assert.strictEqual(formatHandshake(Math.floor(Date.now() / 1000) + 2), 'just now');
   assert.strictEqual(formatHandshake(NOW - 60), '1m 0s ago');
 });
 

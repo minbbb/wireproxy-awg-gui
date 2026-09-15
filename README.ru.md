@@ -129,12 +129,11 @@ INI-формат. Полная документация — в [README прое�
 
 - `index.js` — Electron main process: спавн wireproxy, state machine, оркестрация цепочек, опрос health endpoint, IPC
 - `preload.js` — contextBridge (`window.wireproxyApi`), белый список IPC-каналов
-- `profiles.js` — хранение профилей (без Electron, чистый Node)
-- `chains.js` — определения цепочек (без Electron, чистый Node)
-- `relay.js` — UDP-over-SOCKS5 relay для хопов цепочки (без Electron, чистый Node)
-- `settings.js` — настройки приложения (`autostart`, `autoconnect`, `defaultTarget`)
+- `core/` — чистые Node-модули (без Electron): `vpn-engine.js`, `config-parser.js`, `metrics.js`, `derived-config.js`, `process-utils.js`, `wireproxy-path.js`, `profiles.js` (хранение профилей), `chains.js` (определения цепочек), `relay.js` (UDP-over-SOCKS5 relay для хопов цепочки), `settings.js` (настройки приложения: `autostart`, `autoconnect`, `defaultTarget`)
+- `services/` — сервисы с инъекцией зависимостей (`targets.js`, `autostart.js`, `settings-actions.js`)
+- `ipc/handlers.js` — регистрация IPC-хендлеров (делегирует в core/services)
 - `tray.js` — системный трей (иконка, динамическое меню), подключается из main-процесса
-- `renderer/` — интерфейс на чистом HTML/CSS/JS
+- `renderer/` — интерфейс на чистом HTML/CSS/JS (`state.js` + `ui.js` + `renderer.js`)
 - `scripts/fetch-wireproxy.js` — скачивание/распаковка wireproxy для сборки
 - `electron-builder.yml` — конфиг упаковки (portable win)
 - `icon.png` — иконка приложения/окна/трея

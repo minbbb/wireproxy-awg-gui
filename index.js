@@ -6,9 +6,9 @@
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const profiles = require('./profiles');
-const settings = require('./settings');
-const chains = require('./chains');
+const profiles = require('./core/profiles');
+const settings = require('./core/settings');
+const chains = require('./core/chains');
 const VpnEngine = require('./core/vpn-engine');
 const { resolveWireproxyPath } = require('./core/wireproxy-path');
 const { DERIVED_CONF_DIRNAME } = require('./core/derived-config');
