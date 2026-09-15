@@ -51,7 +51,7 @@ class VpnEngine extends EventEmitter {
   }
 
   hasRunningHop() {
-    return this.hops.some((h) => h.proc && h.proc.exitCode === null);
+    return this.hops.some((h) => h.proc && h.proc.exitCode === null && !h.spawnError);
   }
 
   _log(line) {
@@ -124,7 +124,7 @@ class VpnEngine extends EventEmitter {
     }
     if (h.derivedConfPath) {
       const p = h.derivedConfPath;
-      if (h.proc && h.proc.exitCode === null) {
+      if (h.proc && h.proc.exitCode === null && !h.spawnError) {
         h.proc.once('exit', () => removeFile(p));
       } else {
         removeFile(p);
@@ -167,7 +167,7 @@ class VpnEngine extends EventEmitter {
     const old = this.hops;
     this.hops = [];
     const exits = old.map((h) => {
-      if (h.proc && h.proc.exitCode === null) {
+      if (h.proc && h.proc.exitCode === null && !h.spawnError) {
         return new Promise((resolve) => h.proc.once('exit', resolve));
       }
       return Promise.resolve();
@@ -233,6 +233,15 @@ class VpnEngine extends EventEmitter {
     proc.stderr.on('data', (d) => { this._log(d.toString().replace(/\s+$/, '')); });
     proc.on('error', (err) => {
       this._log('[gui] Failed to launch wireproxy: ' + err.message);
+      if (err.code === 'ENOENT') {
+        this._log('[gui] wireproxy binary not found at ' + this.wireproxyPath);
+      }
+      hop.spawnError = err;
+      // During startup the startRun loop surfaces this via assertMineAlive();
+      // in steady state treat it like an unexpected exit.
+      if (this.state !== 'validating') {
+        this._onHopExit(hop, null);
+      }
     });
     proc.on('exit', (code) => this._onHopExit(hop, code));
     this.hops.push(hop);
@@ -277,6 +286,9 @@ class VpnEngine extends EventEmitter {
     };
     const assertMineAlive = () => {
       for (const h of mine) {
+        if (h.spawnError) {
+          throw new Error('Hop "' + h.name + '" failed to launch: ' + h.spawnError.message);
+        }
         if (!h.proc || h.proc.exitCode !== null) {
           throw new Error('Hop "' + h.name + '" exited during startup (code ' + (h.proc ? h.proc.exitCode : 'n/a') + ')');
         }
@@ -398,14 +410,18 @@ class VpnEngine extends EventEmitter {
       for (const h of mine) {
         const idx = this.hops.indexOf(h);
         if (idx !== -1) this.hops.splice(idx, 1);
-        if (h.proc && h.proc.exitCode === null) {
+        if (h.proc && h.proc.exitCode === null && !h.spawnError) {
           exits.push(new Promise((resolve) => h.proc.once('exit', resolve)));
         }
         this._stopHop(h);
       }
       await Promise.all(exits);
       this._stopHealthPolling();
-      if (token === this.runToken) this._setState('error');
+      if (token === this.runToken) {
+        this.activeIds = [];
+        this.chainId = null;
+        this._setState('error');
+      }
       return { ok: false, output: e.message };
     }
 

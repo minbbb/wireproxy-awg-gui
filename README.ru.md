@@ -65,7 +65,7 @@ npm start
 npm run dist
 ```
 
-Собирает самодостаточный `dist/wireproxy-awg GUI 1.0.0.exe`:
+Собирает самодостаточный `dist/wireproxy-awg GUI 1.1.1.exe`:
 
 1. `npm run fetch:wireproxy` — качает пиновый релиз `wireproxy.exe` (Windows amd64, `wireproxy_windows_amd64.tar.gz`), проверяет SHA-256, распаковывает в `bin/`.
 2. `electron-builder --win` — упаковывает приложение; `wireproxy.exe` кладётся в `resources/bin/`, в рантайме путь резолвится через `process.resourcesPath`.

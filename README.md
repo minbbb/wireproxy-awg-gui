@@ -65,7 +65,7 @@ Runs the app from source via Electron. Requires Node.js and a present `bin/wirep
 npm run dist
 ```
 
-Produces a self-contained `dist/wireproxy-awg GUI 1.0.0.exe`:
+Produces a self-contained `dist/wireproxy-awg GUI 1.1.1.exe`:
 
 1. `npm run fetch:wireproxy` — downloads the pinned `wireproxy.exe` release (Windows amd64, `wireproxy_windows_amd64.tar.gz`), verifies the SHA-256, extracts it into `bin/`.
 2. `electron-builder --win` — packages the app; `wireproxy.exe` is placed into `resources/bin/`, and at runtime the path is resolved via `process.resourcesPath`.

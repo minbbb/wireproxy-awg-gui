@@ -61,8 +61,10 @@ forwards its WireGuard UDP datagrams through the previous hop's SOCKS5 tunnel
   (injected if missing; auth stripped) and loses the non-SOCKS routine sections
   (`[http]`, tunnels) to avoid port clashes. The exit hop keeps its full original
   config (incl. auth/[http]/tunnels) — only the endpoint is rewritten.
-- Chain hops must have exactly one `[Peer] Endpoint` (enforced in `chains:save` and
-  at startup): extra endpoints would be dialed directly, bypassing the chain.
+- Chain hops past the first must have exactly one `[Peer] Endpoint` (enforced in
+  `chains:save` and at startup): extra endpoints in later hops would be dialed
+  directly, bypassing the chain. The first (outermost) hop dials its own
+  endpoints directly and may have several.
 - Health: `connected` only when **all** hops' `/readyz` are 200; any 503 → `degraded`,
   any unreachable → `connecting`. `/metrics` is polled from the exit hop.
 - One dead hop kills the whole run (a partial chain is useless); startup uses a

@@ -385,6 +385,9 @@
     s.activeProfileId = aid;
     if (aids) s.activeIds = aids;
     if (cid !== undefined) s.chainId = cid;
+    if (nextState === 'stopped' || nextState === 'error') {
+      el.metricsPane.textContent = '';
+    }
     setStatus(nextState);
   });
 

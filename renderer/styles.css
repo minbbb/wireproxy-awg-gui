@@ -443,6 +443,17 @@ footer {
   color: var(--fg-dim);
 }
 
+.chain-hop-item select {
+  flex: 1;
+  min-width: 0;
+  background: #3a3b44;
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .chain-hop-item button {
   padding: 2px 7px;
   font-size: 12px;

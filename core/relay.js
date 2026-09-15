@@ -202,6 +202,11 @@ class UdpOverSocksRelay {
     this.relayAddr = null;
     const control = net.connect({ host: this.socksHost, port: this.socksPort });
     control.setNoDelay(true);
+    // Swallow socket errors: connect/handshake failures surface via the
+    // 'connect'/readBytes rejections below, but an error between stages (on a
+    // socket readBytes already cleaned up from) must not crash the main
+    // process with an unhandled 'error' event.
+    control.on('error', () => {});
     await new Promise((resolve, reject) => {
       const onError = (e) => { cleanup(); reject(e); };
       const cleanup = () => { control.removeListener('error', onError); control.removeListener('connect', resolve); };
@@ -228,7 +233,6 @@ class UdpOverSocksRelay {
 
     this.control = control;
     this.relayAddr = { address, port: bnd.port };
-    control.on('error', () => {});
     control.on('close', () => {
       if (this.control === control) this.control = null;
       if (!this.stopped) this.scheduleReconnect('control connection closed');
@@ -288,20 +292,6 @@ class UdpOverSocksRelay {
       this.socket = null;
     }
   }
-
-  status() {
-    return {
-      up: !!(this.relayAddr && !this.stopped),
-      relayAddr: this.relayAddr,
-      peer: this.peer,
-    };
-  }
 }
 
-module.exports = {
-  UdpOverSocksRelay,
-  wrapDatagram,
-  parseDatagram,
-  encodeAddr,
-  parseAddr,
-};
+module.exports = { UdpOverSocksRelay };

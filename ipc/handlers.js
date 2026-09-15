@@ -119,13 +119,15 @@ function registerIpc({ ipcMain, app, engine, profiles, chains, settings, targets
       if (!Array.isArray(profileIds) || profileIds.length === 0) {
         throw new Error('A chain needs at least one profile');
       }
-      for (const pid of profileIds) {
+      profileIds.forEach((pid, i) => {
         const p = profiles.get(pid);
         if (!p) throw new Error('Chain references a missing profile');
-        if (countPeerEndpoints(p.content) > 1) {
+        // The first (outermost) hop dials its own endpoints directly and may
+        // have several; every later hop must have exactly one.
+        if (i > 0 && countPeerEndpoints(p.content) > 1) {
           throw new Error('Profile "' + p.name + '" has multiple [Peer] endpoints; chain hops support exactly one (extra endpoints would bypass the chain)');
         }
-      }
+      });
       const ba = (bindAddress || '').trim();
       if (ba && (!parseEndpoint(ba) || !parseEndpoint(ba).host)) {
         throw new Error('BindAddress must be empty or "host:port" (e.g. 127.0.0.1:25344)');

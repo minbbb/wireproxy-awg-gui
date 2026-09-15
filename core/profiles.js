@@ -50,6 +50,13 @@ function writeIndex(profiles) {
   fs.renameSync(tmp, indexFilePath());
 }
 
+function writeConf(id, content) {
+  const p = confPath(id);
+  const tmp = p + '.tmp';
+  fs.writeFileSync(tmp, content, 'utf8');
+  fs.renameSync(tmp, p);
+}
+
 function migrateLegacy(userDataPath) {
   if (fs.existsSync(indexFilePath())) return;
   const legacy = path.join(userDataPath, 'wireproxy.conf');
@@ -58,7 +65,7 @@ function migrateLegacy(userDataPath) {
     content = fs.readFileSync(legacy, 'utf8');
   }
   const id = crypto.randomUUID();
-  fs.writeFileSync(confPath(id), content, 'utf8');
+  writeConf(id, content);
   writeIndex([{ id, name: 'Profile 1', created: Date.now() }]);
 }
 
@@ -93,7 +100,7 @@ function save(id, content) {
   if (!profiles.some((p) => p.id === id)) {
     throw new Error('Profile not found');
   }
-  fs.writeFileSync(confPath(id), content, 'utf8');
+  writeConf(id, content);
 }
 
 function create() {
@@ -102,7 +109,7 @@ function create() {
   const profiles = readIndex();
   profiles.push({ id, name, created: Date.now() });
   writeIndex(profiles);
-  fs.writeFileSync(confPath(id), DEFAULT_CONFIG, 'utf8');
+  writeConf(id, DEFAULT_CONFIG);
   return { id, name };
 }
 

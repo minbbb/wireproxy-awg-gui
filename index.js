@@ -97,6 +97,7 @@ if (!gotSingleInstanceLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
+      syncTray();
     }
   });
 
@@ -178,6 +179,7 @@ if (!gotSingleInstanceLock) {
           mainWindow.show();
           mainWindow.focus();
         }
+        syncTray();
       },
       onStartStop: () => {
         if (engine.hasRunningHop()) {
@@ -226,6 +228,7 @@ if (!gotSingleInstanceLock) {
       if (quitting) return;
       e.preventDefault();
       mainWindow.hide();
+      syncTray();
     });
     mainWindow.on('closed', () => { mainWindow = null; });
     mainWindow.webContents.on('did-finish-load', () => maybeAutoConnect());
